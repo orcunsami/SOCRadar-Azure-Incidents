@@ -1,0 +1,218 @@
+// ============================================
+// SOCRadar Integration - Useful KQL Queries
+// ============================================
+
+// -----------------------------------------
+// 1. ALARM OVERVIEW
+// -----------------------------------------
+
+// Total alarms by severity (last 7 days)
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(7d)
+| summarize Count = count() by Severity
+| order by Count desc
+
+// Alarms timeline (hourly)
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(24h)
+| summarize Count = count() by bin(TimeGenerated, 1h), Severity
+| render timechart
+
+// Top 10 alarm types
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(7d)
+| summarize Count = count() by AlarmMainType, AlarmSubType
+| top 10 by Count
+| project AlarmType = strcat(AlarmMainType, " / ", AlarmSubType), Count
+
+// -----------------------------------------
+// 2. INCIDENT CORRELATION
+// -----------------------------------------
+
+// Match SOCRadar alarms with Sentinel incidents
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(7d)
+| join kind=leftouter (
+    SecurityIncident
+    | where TimeGenerated > ago(7d)
+    | where Title contains "[SOCRadar]"
+    | extend AlarmId = extract(@"#(\d+)", 1, Title)
+) on $left.AlarmId == $right.AlarmId
+| project
+    AlarmId,
+    AlarmTitle = Title,
+    Severity,
+    AlarmStatus = Status,
+    IncidentStatus = Status1,
+    IncidentNumber = IncidentNumber,
+    AlarmDate,
+    IncidentCreated = CreatedTime
+
+// Find alarms without incidents (potential sync issues)
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(24h)
+| where Status == "OPEN"
+| join kind=leftanti (
+    SecurityIncident
+    | where TimeGenerated > ago(24h)
+    | where Title contains "[SOCRadar]"
+    | extend AlarmId = extract(@"#(\d+)", 1, Title)
+) on AlarmId
+| project TimeGenerated, AlarmId, Title, Severity
+
+// -----------------------------------------
+// 3. AUDIT & OPERATIONS
+// -----------------------------------------
+
+// Import operations summary
+SOCRadarAuditLog_CL
+| where TimeGenerated > ago(24h)
+| where EventType == "AlarmImported"
+| summarize
+    TotalImported = count(),
+    Successful = countif(OperationStatus == "Success"),
+    Failed = countif(OperationStatus == "Failed")
+
+// Sync operations summary
+SOCRadarAuditLog_CL
+| where TimeGenerated > ago(24h)
+| where EventType == "AlarmSynced"
+| summarize
+    TotalSynced = count(),
+    Successful = countif(OperationStatus == "Success"),
+    Failed = countif(OperationStatus == "Failed")
+
+// Errors in last 24 hours
+SOCRadarAuditLog_CL
+| where TimeGenerated > ago(24h)
+| where OperationStatus == "Failed"
+| project TimeGenerated, EventType, AlarmId, Message
+| order by TimeGenerated desc
+
+// -----------------------------------------
+// 4. LOGIC APP DIAGNOSTICS
+// -----------------------------------------
+
+// Failed Logic App runs
+AzureDiagnostics
+| where ResourceType == "WORKFLOWS"
+| where resource_workflowName_s contains "SOCRadar"
+| where status_s == "Failed"
+| project
+    TimeGenerated,
+    Workflow = resource_workflowName_s,
+    Action = action_s,
+    Error = error_message_s
+| order by TimeGenerated desc
+
+// Logic App run durations
+AzureDiagnostics
+| where ResourceType == "WORKFLOWS"
+| where resource_workflowName_s contains "SOCRadar"
+| where status_s == "Succeeded"
+| summarize
+    AvgDuration = avg(duration_s),
+    MaxDuration = max(duration_s),
+    RunCount = count()
+    by resource_workflowName_s
+
+// -----------------------------------------
+// 5. SECURITY ANALYSIS
+// -----------------------------------------
+
+// High/Critical alarms not yet closed
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(7d)
+| where Severity in ("HIGH", "CRITICAL")
+| join kind=leftouter (
+    SecurityIncident
+    | where Status != "Closed"
+    | extend AlarmId = extract(@"#(\d+)", 1, Title)
+) on AlarmId
+| where Status1 != "Closed" or isnull(Status1)
+| project
+    AlarmId,
+    Severity,
+    Title,
+    AlarmDate,
+    DaysOpen = datetime_diff('day', now(), AlarmDate)
+| order by Severity, DaysOpen desc
+
+// Alarm trends by type (week over week)
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(14d)
+| summarize
+    ThisWeek = countif(TimeGenerated > ago(7d)),
+    LastWeek = countif(TimeGenerated between (ago(14d) .. ago(7d)))
+    by AlarmMainType
+| extend Change = ThisWeek - LastWeek
+| order by Change desc
+
+// Mean time to close (incidents)
+SecurityIncident
+| where Title contains "[SOCRadar]"
+| where Status == "Closed"
+| extend MTTC = datetime_diff('hour', ClosedTime, CreatedTime)
+| summarize
+    AvgHoursToClose = avg(MTTC),
+    MedianHoursToClose = percentile(MTTC, 50),
+    IncidentCount = count()
+    by Classification
+
+// -----------------------------------------
+// 6. WORKBOOK QUERIES
+// -----------------------------------------
+
+// Status distribution for pie chart
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(7d)
+| summarize Count = count() by Status
+| render piechart
+
+// Severity heatmap by day
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(30d)
+| extend Day = format_datetime(TimeGenerated, 'yyyy-MM-dd')
+| summarize Count = count() by Day, Severity
+| render columnchart
+
+// Recent alarms table (for dashboard)
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(24h)
+| project
+    TimeGenerated,
+    AlarmId,
+    Severity,
+    Type = strcat(AlarmMainType, " / ", AlarmSubType),
+    Title,
+    Status,
+    SOCRadarLink = strcat("https://platform.socradar.com/company/", CompanyId, "/alarm/", AlarmId)
+| order by TimeGenerated desc
+| take 100
+
+// -----------------------------------------
+// 7. ALERT RULES (Scheduled Analytics)
+// -----------------------------------------
+
+// Alert: High volume of critical alarms
+// Schedule: Every 15 minutes, lookback 15 minutes
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(15m)
+| where Severity == "CRITICAL"
+| summarize CriticalCount = count()
+| where CriticalCount > 5
+
+// Alert: Sync failures detected
+// Schedule: Every 1 hour, lookback 1 hour
+SOCRadarAuditLog_CL
+| where TimeGenerated > ago(1h)
+| where OperationStatus == "Failed"
+| summarize FailureCount = count()
+| where FailureCount > 0
+
+// Alert: No alarms imported (health check)
+// Schedule: Every 6 hours, lookback 6 hours
+SOCRadar_Alarms_CL
+| where TimeGenerated > ago(6h)
+| summarize AlarmCount = count()
+| where AlarmCount == 0
