@@ -169,6 +169,7 @@
                                                 },
                                                 "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
                                             },
+                                            "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                             "runAfter": {}
                                         },
                                         "Map_Severity": {
@@ -191,6 +192,7 @@
                                                     },
                                                     "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
                                                 },
+                                                "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                                 "runAfter": { "Map_Severity": ["Succeeded"] }
                                             },
                                             "Add_Synced_Tag": {

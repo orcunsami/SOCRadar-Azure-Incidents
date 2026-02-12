@@ -228,6 +228,7 @@
                                         },
                                         "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
                                     },
+                                    "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                     "runAfter": {}
                                 },
                                 "Parse_Page_Response": {

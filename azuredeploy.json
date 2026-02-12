@@ -367,6 +367,7 @@
                                         "queries": { "page": "@{variables('page')}", "limit": "100", "start_date": "@{outputs('Calculate_Epoch_Start')}", "include_total_records": "true" },
                                         "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
                                     },
+                                    "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                     "runAfter": {}
                                 },
                                 "Parse_Page_Response": {
@@ -761,6 +762,7 @@
                                                 "body": { "alarm_ids": "@createArray(int(outputs('Extract_Alarm_ID')))", "status": "@{if(equals(items('For_Each_Incident')?['properties']?['classification'], 'FalsePositive'), 9, if(equals(items('For_Each_Incident')?['properties']?['classification'], 'BenignPositive'), 12, 2))}", "comments": "Closed in Microsoft Sentinel (Classification: @{coalesce(items('For_Each_Incident')?['properties']?['classification'], 'Unclassified')})" },
                                                 "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
                                             },
+                                            "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                             "runAfter": {}
                                         },
                                         "Map_Severity": {
@@ -777,6 +779,7 @@
                                                 "body": { "alarm_ids": "@createArray(int(outputs('Extract_Alarm_ID')))", "severity": "@{outputs('Map_Severity')}" },
                                                 "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
                                             },
+                                            "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                             "runAfter": { "Map_Severity": ["Succeeded"] }
                                         },
                                         "Add_Synced_Tag": {
