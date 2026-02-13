@@ -1,10 +1,10 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.1.0",
+    "contentVersion": "1.2.0",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
         "description": "Bidirectional integration: Import SOCRadar alarms to Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-13T00:00:00.000Z"
     },
@@ -73,6 +73,13 @@
                 "description": "Deploy SOCRadar Analytics Dashboard workbook"
             }
         },
+        "CreateWorkspace": {
+            "type": "bool",
+            "defaultValue": true,
+            "metadata": {
+                "description": "Create Log Analytics workspace and enable Sentinel. Set to false if workspace already exists."
+            }
+        },
         "TableRetentionDays": {
             "type": "int",
             "defaultValue": 365,
@@ -109,10 +116,46 @@
     },
     "resources": [
         {
+            "condition": "[parameters('CreateWorkspace')]",
+            "type": "Microsoft.OperationalInsights/workspaces",
+            "apiVersion": "2023-09-01",
+            "name": "[parameters('WorkspaceName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "sku": {
+                    "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+            }
+        },
+        {
+            "condition": "[parameters('CreateWorkspace')]",
+            "type": "Microsoft.OperationsManagement/solutions",
+            "apiVersion": "2015-11-01-preview",
+            "name": "[concat('SecurityInsights(', parameters('WorkspaceName'), ')')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]"
+            ],
+            "plan": {
+                "name": "[concat('SecurityInsights(', parameters('WorkspaceName'), ')')]",
+                "publisher": "Microsoft",
+                "product": "OMSGallery/SecurityInsights",
+                "promotionCode": ""
+            },
+            "properties": {
+                "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]"
+            }
+        },
+        {
             "condition": "[parameters('EnableAuditLogging')]",
             "type": "Microsoft.OperationalInsights/workspaces/tables",
             "apiVersion": "2022-10-01",
             "name": "[concat(parameters('WorkspaceName'), '/', variables('AuditTableName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
             "properties": {
                 "schema": {
                     "name": "[variables('AuditTableName')]",
@@ -262,6 +305,10 @@
             "type": "Microsoft.OperationalInsights/workspaces/tables",
             "apiVersion": "2022-10-01",
             "name": "[concat(parameters('WorkspaceName'), '/', variables('AlarmsTableName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
             "properties": {
                 "schema": {
                     "name": "[variables('AlarmsTableName')]",
