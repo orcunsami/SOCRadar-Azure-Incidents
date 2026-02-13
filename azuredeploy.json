@@ -1,10 +1,10 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.3.0",
+    "contentVersion": "1.3.1",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
         "description": "Bidirectional integration: Import SOCRadar alarms to Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
-        "version": "1.3.0",
+        "version": "1.3.1",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-13T00:00:00.000Z"
     },
@@ -136,6 +136,15 @@
             "properties": {
                 "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]"
             }
+        },
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/providers/onboardingStates",
+            "apiVersion": "2024-03-01",
+            "name": "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/default')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
+            "properties": {}
         },
         {
             "condition": "[parameters('EnableAuditLogging')]",
