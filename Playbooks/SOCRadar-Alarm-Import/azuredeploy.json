@@ -1,12 +1,12 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "3.27.0",
+    "contentVersion": "3.29.0",
     "metadata": {
         "title": "SOCRadar-Alarm-Import",
         "description": "Imports alarms from SOCRadar with optional audit logging and custom table storage. Supports all statuses or OPEN only.",
-        "version": "3.27.0",
+        "version": "3.29.0",
         "author": "SOCRadar",
-        "lastUpdateTime": "2026-02-04T00:00:00.000Z"
+        "lastUpdateTime": "2026-02-06T00:00:00.000Z"
     },
     "parameters": {
         "PlaybookName": {
@@ -293,53 +293,67 @@
                             },
                             "runAfter": { "Initialize_All_Alarms": ["Succeeded"] }
                         },
-                        "Query_All_Existing_IDs": {
-                            "type": "Http",
-                            "inputs": {
-                                "method": "GET",
-                                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1000&$filter=startswith(properties/title, ''[SOCRadar]'')')]",
-                                "authentication": { "type": "ManagedServiceIdentity" },
-                                "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
-                            },
+                        "Initialize_Existing_Incidents": {
+                            "type": "InitializeVariable",
+                            "inputs": { "variables": [{ "name": "existing_incidents", "type": "array", "value": [] }] },
                             "runAfter": { "Pagination_Loop": ["Succeeded"] }
                         },
-                        "Parse_Existing_IDs": {
-                            "type": "ParseJson",
-                            "inputs": {
-                                "content": "@body('Query_All_Existing_IDs')",
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "value": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "properties": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "title": { "type": "string" }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                        "Initialize_Incidents_NextLink": {
+                            "type": "InitializeVariable",
+                            "inputs": { "variables": [{ "name": "incidents_next_link", "type": "string", "value": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1000&$filter=startswith(properties/title, ''[SOCRadar]'')')]" }] },
+                            "runAfter": { "Initialize_Existing_Incidents": ["Succeeded"] }
+                        },
+                        "Pagination_Loop_Incidents": {
+                            "type": "Until",
+                            "expression": "@equals(variables('incidents_next_link'), '')",
+                            "limit": { "count": 100, "timeout": "PT1H" },
+                            "actions": {
+                                "Query_Incidents_Page": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "GET",
+                                        "uri": "@variables('incidents_next_link')",
+                                        "authentication": { "type": "ManagedServiceIdentity" },
+                                        "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
+                                    },
+                                    "runAfter": {}
+                                },
+                                "Compose_New_Incidents": {
+                                    "type": "Compose",
+                                    "inputs": "@union(variables('existing_incidents'), coalesce(body('Query_Incidents_Page')?['value'], json('[]')))",
+                                    "runAfter": { "Query_Incidents_Page": ["Succeeded"] }
+                                },
+                                "Set_Existing_Incidents": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "existing_incidents",
+                                        "value": "@outputs('Compose_New_Incidents')"
+                                    },
+                                    "runAfter": { "Compose_New_Incidents": ["Succeeded"] }
+                                },
+                                "Set_Incidents_NextLink": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "incidents_next_link",
+                                        "value": "@coalesce(body('Query_Incidents_Page')?['nextLink'], '')"
+                                    },
+                                    "runAfter": { "Set_Existing_Incidents": ["Succeeded"] }
                                 }
                             },
-                            "runAfter": { "Query_All_Existing_IDs": ["Succeeded"] }
+                            "runAfter": { "Initialize_Incidents_NextLink": ["Succeeded"] }
                         },
                         "Extract_Existing_IDs": {
                             "type": "Select",
                             "inputs": {
-                                "from": "@coalesce(body('Parse_Existing_IDs')?['value'], json('[]'))",
+                                "from": "@variables('existing_incidents')",
                                 "select": "@split(split(coalesce(item()?['properties']?['title'], ''), '#')[1], ' ')[0]"
                             },
-                            "runAfter": { "Parse_Existing_IDs": ["Succeeded"] }
+                            "runAfter": { "Pagination_Loop_Incidents": ["Succeeded"] }
                         },
                         "For_Each_Alarm": {
                             "type": "Foreach",
                             "foreach": "@variables('all_alarms')",
+                            "runtimeConfiguration": { "concurrency": { "repetitions": 5 } },
                             "actions": {
                                 "Check_If_Should_Import": {
                                     "type": "If",
