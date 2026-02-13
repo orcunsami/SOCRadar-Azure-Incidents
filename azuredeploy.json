@@ -75,9 +75,9 @@
         },
         "CreateWorkspace": {
             "type": "bool",
-            "defaultValue": true,
+            "defaultValue": false,
             "metadata": {
-                "description": "Create Log Analytics workspace and enable Sentinel. Set to false if workspace already exists."
+                "description": "Set to true ONLY if you do not have a Sentinel workspace yet. If your workspace already exists, leave this as false."
             }
         },
         "TableRetentionDays": {
