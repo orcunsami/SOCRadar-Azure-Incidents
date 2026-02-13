@@ -1,10 +1,10 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.2.0",
+    "contentVersion": "1.3.0",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
         "description": "Bidirectional integration: Import SOCRadar alarms to Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-13T00:00:00.000Z"
     },
@@ -73,13 +73,6 @@
                 "description": "Deploy SOCRadar Analytics Dashboard workbook"
             }
         },
-        "CreateWorkspace": {
-            "type": "bool",
-            "defaultValue": false,
-            "metadata": {
-                "description": "Set to true ONLY if you do not have a Sentinel workspace yet. If your workspace already exists, leave this as false."
-            }
-        },
         "TableRetentionDays": {
             "type": "int",
             "defaultValue": 365,
@@ -116,7 +109,6 @@
     },
     "resources": [
         {
-            "condition": "[parameters('CreateWorkspace')]",
             "type": "Microsoft.OperationalInsights/workspaces",
             "apiVersion": "2023-09-01",
             "name": "[parameters('WorkspaceName')]",
@@ -124,12 +116,10 @@
             "properties": {
                 "sku": {
                     "name": "PerGB2018"
-                },
-                "retentionInDays": 30
+                }
             }
         },
         {
-            "condition": "[parameters('CreateWorkspace')]",
             "type": "Microsoft.OperationsManagement/solutions",
             "apiVersion": "2015-11-01-preview",
             "name": "[concat('SecurityInsights(', parameters('WorkspaceName'), ')')]",
@@ -497,6 +487,7 @@
                 "type": "SystemAssigned"
             },
             "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]"
@@ -1296,6 +1287,7 @@
                 "type": "SystemAssigned"
             },
             "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]"
             ],
             "properties": {
@@ -1326,7 +1318,8 @@
                             "type": "Recurrence",
                             "recurrence": {
                                 "frequency": "Minute",
-                                "interval": "[parameters('PollingIntervalMinutes')]"
+                                "interval": "[parameters('PollingIntervalMinutes')]",
+                                "startTime": "[parameters('_triggerStartTime')]"
                             }
                         }
                     },
