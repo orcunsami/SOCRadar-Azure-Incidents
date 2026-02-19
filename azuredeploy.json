@@ -1565,10 +1565,13 @@
                                                 "body": {
                                                     "properties": {
                                                         "title": "@{items('For_Each_Incident')?['properties']?['title']}",
+                                                        "description": "@{items('For_Each_Incident')?['properties']?['description']}",
                                                         "status": "@{items('For_Each_Incident')?['properties']?['status']}",
                                                         "severity": "@{items('For_Each_Incident')?['properties']?['severity']}",
                                                         "classification": "@{items('For_Each_Incident')?['properties']?['classification']}",
                                                         "classificationReason": "@{items('For_Each_Incident')?['properties']?['classificationReason']}",
+                                                        "classificationComment": "@{items('For_Each_Incident')?['properties']?['classificationComment']}",
+                                                        "owner": "@items('For_Each_Incident')?['properties']?['owner']",
                                                         "labels": "@union(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]')), json('[{\"labelName\": \"Synced\", \"labelType\": \"User\"}]'))"
                                                     }
                                                 },
