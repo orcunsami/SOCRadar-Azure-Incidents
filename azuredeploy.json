@@ -1,12 +1,12 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.3.1",
+    "contentVersion": "1.3.2",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
         "description": "Bidirectional integration: Import SOCRadar alarms to Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
-        "version": "1.3.1",
+        "version": "1.3.2",
         "author": "SOCRadar",
-        "lastUpdateTime": "2026-02-13T00:00:00.000Z"
+        "lastUpdateTime": "2026-02-20T00:00:00.000Z"
     },
     "parameters": {
         "WorkspaceName": {
@@ -1563,6 +1563,7 @@
                                                     "Content-Type": "application/json"
                                                 },
                                                 "body": {
+                                                    "etag": "@{items('For_Each_Incident')?['etag']}",
                                                     "properties": {
                                                         "title": "@{items('For_Each_Incident')?['properties']?['title']}",
                                                         "description": "@{items('For_Each_Incident')?['properties']?['description']}",
@@ -1572,6 +1573,8 @@
                                                         "classificationReason": "@{items('For_Each_Incident')?['properties']?['classificationReason']}",
                                                         "classificationComment": "@{items('For_Each_Incident')?['properties']?['classificationComment']}",
                                                         "owner": "@items('For_Each_Incident')?['properties']?['owner']",
+                                                        "firstActivityTimeUtc": "@{items('For_Each_Incident')?['properties']?['firstActivityTimeUtc']}",
+                                                        "lastActivityTimeUtc": "@{items('For_Each_Incident')?['properties']?['lastActivityTimeUtc']}",
                                                         "labels": "@union(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]')), json('[{\"labelName\": \"Synced\", \"labelType\": \"User\"}]'))"
                                                     }
                                                 },
