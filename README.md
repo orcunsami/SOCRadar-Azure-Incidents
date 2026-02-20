@@ -16,10 +16,11 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 | Parameter | Description |
 |-----------|-------------|
 | `WorkspaceName` | Your Sentinel workspace name (e.g., `my-sentinel-workspace`, NOT the Workspace ID/GUID) |
+| `WorkspaceLocation` | Region of your workspace (e.g., `centralus`, `northeurope`) |
 | `SocradarApiKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
-> **Note:** You can find your Workspace Name in Azure Portal → Log Analytics workspaces → your workspace → Overview → "Name" field.
+> **Note:** You can find your Workspace Name in Azure Portal > Log Analytics workspaces > your workspace > Overview > "Name" field.
 
 ### Optional Parameters
 
@@ -51,7 +52,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 **Bidirectional Sync**
 - Closed incidents in Sentinel update alarm status in SOCRadar
-- Classification mapping: TruePositive → Resolved, FalsePositive → False Positive
+- Classification mapping: TruePositive to Resolved, FalsePositive to False Positive
 
 **Audit Logging**
 - Full alarm JSON stored in Log Analytics

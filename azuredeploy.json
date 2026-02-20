@@ -1,10 +1,10 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.3.3",
+    "contentVersion": "1.0.0",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
         "description": "Bidirectional integration: Import SOCRadar alarms to Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
-        "version": "1.3.3",
+        "version": "1.0.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-20T00:00:00.000Z"
     },
@@ -13,6 +13,12 @@
             "type": "string",
             "metadata": {
                 "description": "Microsoft Sentinel Log Analytics Workspace Name"
+            }
+        },
+        "WorkspaceLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "Location/region of the Log Analytics workspace (e.g., centralus, northeurope). Must match your existing workspace region."
             }
         },
         "SocradarApiKey": {
@@ -112,7 +118,7 @@
             "type": "Microsoft.OperationalInsights/workspaces",
             "apiVersion": "2023-09-01",
             "name": "[parameters('WorkspaceName')]",
-            "location": "[resourceGroup().location]",
+            "location": "[parameters('WorkspaceLocation')]",
             "properties": {
                 "sku": {
                     "name": "PerGB2018"
@@ -123,7 +129,7 @@
             "type": "Microsoft.OperationsManagement/solutions",
             "apiVersion": "2015-11-01-preview",
             "name": "[concat('SecurityInsights(', parameters('WorkspaceName'), ')')]",
-            "location": "[reference(variables('workspaceResourceId'), '2023-09-01', 'Full').location]",
+            "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]"
             ],
@@ -215,7 +221,7 @@
             "type": "Microsoft.Insights/dataCollectionRules",
             "apiVersion": "2023-03-11",
             "name": "[variables('AuditDcrName')]",
-            "location": "[reference(variables('workspaceResourceId'), '2023-09-01', 'Full').location]",
+            "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
                 "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), variables('AuditTableName'))]"
             ],
@@ -291,10 +297,7 @@
             "type": "Microsoft.Insights/dataCollectionEndpoints",
             "apiVersion": "2023-03-11",
             "name": "[variables('DceName')]",
-            "location": "[reference(variables('workspaceResourceId'), '2023-09-01', 'Full').location]",
-            "dependsOn": [
-                "[variables('workspaceResourceId')]"
-            ],
+            "location": "[parameters('WorkspaceLocation')]",
             "properties": {
                 "description": "Data Collection Endpoint for SOCRadar integration",
                 "networkAcls": {
@@ -381,7 +384,7 @@
             "type": "Microsoft.Insights/dataCollectionRules",
             "apiVersion": "2023-03-11",
             "name": "[variables('AlarmsDcrName')]",
-            "location": "[reference(variables('workspaceResourceId'), '2023-09-01', 'Full').location]",
+            "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
                 "[resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('DceName'))]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), variables('AlarmsTableName'))]"
@@ -466,7 +469,7 @@
             "type": "Microsoft.Insights/workbooks",
             "apiVersion": "2022-04-01",
             "name": "[guid(resourceGroup().id, 'SOCRadar-Workbook')]",
-            "location": "[reference(variables('workspaceResourceId'), '2023-09-01', 'Full').location]",
+            "location": "[parameters('WorkspaceLocation')]",
             "kind": "shared",
             "properties": {
                 "displayName": "SOCRadar Integration Dashboard",
