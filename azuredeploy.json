@@ -1653,7 +1653,7 @@
         {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "name": "[guid(resourceGroup().id, variables('ImportPlaybookName'), variables('SentinelContributorRoleId'))]",
+            "name": "[guid(resourceGroup().id, variables('ImportPlaybookName'), variables('SentinelContributorRoleId'), deployment().name)]",
             "dependsOn": [
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]"
             ],
@@ -1666,7 +1666,7 @@
         {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName')), variables('ImportPlaybookName'), variables('LogAnalyticsReaderRoleId'))]",
+            "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName')), variables('ImportPlaybookName'), variables('LogAnalyticsReaderRoleId'), deployment().name)]",
             "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
             "dependsOn": [
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]"
@@ -1681,7 +1681,7 @@
             "condition": "[parameters('EnableAuditLogging')]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName')), variables('ImportPlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
+            "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName')), variables('ImportPlaybookName'), variables('MonitoringMetricsPublisherRoleId'), deployment().name)]",
             "scope": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName'))]",
             "dependsOn": [
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
@@ -1697,7 +1697,7 @@
             "condition": "[parameters('EnableAlarmsTable')]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName')), variables('ImportPlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
+            "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName')), variables('ImportPlaybookName'), variables('MonitoringMetricsPublisherRoleId'), deployment().name)]",
             "scope": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]",
             "dependsOn": [
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
@@ -1712,7 +1712,7 @@
         {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "name": "[guid(resourceGroup().id, variables('SyncPlaybookName'), variables('SentinelContributorRoleId'))]",
+            "name": "[guid(resourceGroup().id, variables('SyncPlaybookName'), variables('SentinelContributorRoleId'), deployment().name)]",
             "dependsOn": [
                 "[resourceId('Microsoft.Logic/workflows', variables('SyncPlaybookName'))]"
             ],
