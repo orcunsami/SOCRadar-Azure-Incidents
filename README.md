@@ -77,6 +77,10 @@ Logic Apps are configured to start **3 minutes after deployment** to allow Azure
 
 No manual action required - they will start automatically.
 
+## Redeployment
+
+Role assignments are generated with deployment-scoped unique identifiers. This means you can safely delete all resources and redeploy without running into `RoleAssignmentUpdateNotPermitted` errors. Previous role assignments from old deployments are automatically orphaned and do not affect the new deployment.
+
 ## About SOCRadar
 
 SOCRadar is an Extended Threat Intelligence (XTI) platform that provides actionable threat intelligence, digital risk protection, and external attack surface management.
