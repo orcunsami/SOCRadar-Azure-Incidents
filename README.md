@@ -17,7 +17,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 |-----------|-------------|
 | `WorkspaceName` | Your Sentinel workspace name (e.g., `my-sentinel-workspace`, NOT the Workspace ID/GUID) |
 | `WorkspaceLocation` | Region of your workspace (e.g., `centralus`, `northeurope`) |
-| `SocradarApiKey` | Your SOCRadar API key |
+| `SOCRadarAPIKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
 > **Note:** You can find your Workspace Name in Azure Portal > Log Analytics workspaces > your workspace > Overview > "Name" field.

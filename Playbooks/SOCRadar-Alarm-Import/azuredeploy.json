@@ -14,9 +14,9 @@
             "defaultValue": "SOCRadar-Alarm-Import",
             "metadata": { "description": "Name of the Logic App" }
         },
-        "SocradarApiKey": {
+        "SOCRadarAPIKey": {
             "type": "securestring",
-            "metadata": { "description": "SOCRadar Platform API Key" }
+            "metadata": { "description": "SOCRadar API Key" }
         },
         "CompanyId": {
             "type": "string",
@@ -124,7 +124,7 @@
                     "contentVersion": "1.0.0.0",
                     "parameters": {
                         "$connections": { "defaultValue": {}, "type": "Object" },
-                        "SocradarApiKey": { "type": "SecureString" },
+                        "SOCRadarAPIKey": { "type": "SecureString" },
                         "EnableAuditLogging": { "type": "Bool", "defaultValue": false },
                         "AuditDcrEndpoint": { "type": "String", "defaultValue": "" },
                         "AuditDcrImmutableId": { "type": "String", "defaultValue": "" },
@@ -219,7 +219,7 @@
                                     "inputs": {
                                         "method": "GET",
                                         "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/incidents/v4",
-                                        "headers": { "API-Key": "@{parameters('SocradarApiKey')}" },
+                                        "headers": { "API-Key": "@{parameters('SOCRadarAPIKey')}" },
                                         "queries": {
                                             "page": "@{variables('page')}",
                                             "limit": "100",
@@ -524,7 +524,7 @@
                             }
                         }
                     },
-                    "SocradarApiKey": { "value": "[parameters('SocradarApiKey')]" },
+                    "SOCRadarAPIKey": { "value": "[parameters('SOCRadarAPIKey')]" },
                     "CompanyId": { "value": "[parameters('CompanyId')]" },
                     "WorkspaceName": { "value": "[parameters('WorkspaceName')]" },
                     "PollingIntervalMinutes": { "value": "[parameters('PollingIntervalMinutes')]" },
