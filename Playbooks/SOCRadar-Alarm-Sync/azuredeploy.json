@@ -14,9 +14,9 @@
             "defaultValue": "SOCRadar-Alarm-Sync",
             "metadata": { "description": "Name of the Logic App" }
         },
-        "SocradarApiKey": {
+        "SOCRadarAPIKey": {
             "type": "securestring",
-            "metadata": { "description": "SOCRadar Platform API Key" }
+            "metadata": { "description": "SOCRadar API Key" }
         },
         "CompanyId": {
             "type": "string",
@@ -74,7 +74,7 @@
                     "contentVersion": "1.0.0.0",
                     "parameters": {
                         "$connections": { "defaultValue": {}, "type": "Object" },
-                        "SocradarApiKey": { "type": "SecureString" },
+                        "SOCRadarAPIKey": { "type": "SecureString" },
                         "CompanyId": { "type": "String" },
                         "WorkspaceName": { "type": "String" },
                         "PollingIntervalMinutes": { "type": "Int" }
@@ -174,7 +174,7 @@
                                                 "method": "POST",
                                                 "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarms/status/change",
                                                 "headers": {
-                                                    "API-Key": "@{parameters('SocradarApiKey')}",
+                                                    "API-Key": "@{parameters('SOCRadarAPIKey')}",
                                                     "Content-Type": "application/json"
                                                 },
                                                 "body": {
@@ -198,7 +198,7 @@
                                                     "method": "POST",
                                                     "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarm/severity",
                                                     "headers": {
-                                                        "API-Key": "@{parameters('SocradarApiKey')}",
+                                                        "API-Key": "@{parameters('SOCRadarAPIKey')}",
                                                         "Content-Type": "application/json"
                                                     },
                                                     "body": {
@@ -257,7 +257,7 @@
                             }
                         }
                     },
-                    "SocradarApiKey": { "value": "[parameters('SocradarApiKey')]" },
+                    "SOCRadarAPIKey": { "value": "[parameters('SOCRadarAPIKey')]" },
                     "CompanyId": { "value": "[parameters('CompanyId')]" },
                     "WorkspaceName": { "value": "[parameters('WorkspaceName')]" },
                     "PollingIntervalMinutes": { "value": "[parameters('PollingIntervalMinutes')]" }
