@@ -22,10 +22,10 @@
                 "description": "Location/region of the Log Analytics workspace (e.g., centralus, northeurope). Must match your existing workspace region."
             }
         },
-        "SOCRadarAPIKey": {
+        "SocradarApiKey": {
             "type": "securestring",
             "metadata": {
-                "description": "SOCRadar API Key"
+                "description": "SOCRadar Platform API Key"
             }
         },
         "CompanyId": {
@@ -518,7 +518,7 @@
                             "defaultValue": {},
                             "type": "Object"
                         },
-                        "SOCRadarAPIKey": {
+                        "SocradarApiKey": {
                             "type": "SecureString"
                         },
                         "EnableAuditLogging": {
@@ -688,7 +688,7 @@
                                         "method": "GET",
                                         "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/incidents/v4",
                                         "headers": {
-                                            "API-Key": "@{parameters('SOCRadarAPIKey')}"
+                                            "API-Key": "@{parameters('SocradarApiKey')}"
                                         },
                                         "queries": {
                                             "page": "@{variables('page')}",
@@ -1243,8 +1243,8 @@
                             }
                         }
                     },
-                    "SOCRadarAPIKey": {
-                        "value": "[parameters('SOCRadarAPIKey')]"
+                    "SocradarApiKey": {
+                        "value": "[parameters('SocradarApiKey')]"
                     },
                     "CompanyId": {
                         "value": "[parameters('CompanyId')]"
@@ -1316,7 +1316,7 @@
                             "defaultValue": {},
                             "type": "Object"
                         },
-                        "SOCRadarAPIKey": {
+                        "SocradarApiKey": {
                             "type": "SecureString"
                         },
                         "CompanyId": {
@@ -1492,7 +1492,7 @@
                                                 "method": "POST",
                                                 "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarms/status/change",
                                                 "headers": {
-                                                    "API-Key": "@{parameters('SOCRadarAPIKey')}",
+                                                    "API-Key": "@{parameters('SocradarApiKey')}",
                                                     "Content-Type": "application/json"
                                                 },
                                                 "body": {
@@ -1531,7 +1531,7 @@
                                                 "method": "POST",
                                                 "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarm/severity",
                                                 "headers": {
-                                                    "API-Key": "@{parameters('SOCRadarAPIKey')}",
+                                                    "API-Key": "@{parameters('SocradarApiKey')}",
                                                     "Content-Type": "application/json"
                                                 },
                                                 "body": {
@@ -1635,8 +1635,8 @@
                             }
                         }
                     },
-                    "SOCRadarAPIKey": {
-                        "value": "[parameters('SOCRadarAPIKey')]"
+                    "SocradarApiKey": {
+                        "value": "[parameters('SocradarApiKey')]"
                     },
                     "CompanyId": {
                         "value": "[parameters('CompanyId')]"
