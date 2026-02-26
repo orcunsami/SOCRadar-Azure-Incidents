@@ -3,11 +3,10 @@
 Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Forcunsami%2FSOCRadar-Azure-Incidents%2Fmaster%2Fazuredeploy.json)
-
 ## Prerequisites
 
 - Microsoft Sentinel workspace
-- SOCRadar Platform API Key
+- SOCRadar API Key
 
 ## Configuration
 
@@ -17,7 +16,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 |-----------|-------------|
 | `WorkspaceName` | Your Sentinel workspace name (e.g., `my-sentinel-workspace`, NOT the Workspace ID/GUID) |
 | `WorkspaceLocation` | Region of your workspace (e.g., `centralus`, `northeurope`) |
-| `SocradarApiKey` | Your SOCRadar Platform API Key |
+| `SocradarApiKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
 > **Note:** You can find your Workspace Name in Azure Portal > Log Analytics workspaces > your workspace > Overview > "Name" field.
@@ -26,6 +25,8 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `WorkspaceResourceGroup` | *(same as deployment RG)* | Set if your workspace is in a different resource group |
+| `SentinelRoleLevel` | Contributor | `Responder` for least-privilege (no incident delete) |
 | `PollingIntervalMinutes` | 5 | How often to check for alarms (1-60 min) |
 | `InitialLookbackMinutes` | 600 | First run lookback (default: 10 hours) |
 | `EnableAuditLogging` | true | Log operations to Log Analytics |
@@ -71,15 +72,16 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
   - Audit log analysis
   - Alert rules for scheduled analytics
 
+## Cross-Region / Cross-Resource-Group
+
+- If your workspace is in a different **region**, set `WorkspaceLocation` to match your workspace region.
+- If your workspace is in a different **resource group**, set `WorkspaceResourceGroup`. Custom tables, workbook, and audit logging require same-RG deployment.
+
 ## Post-Deployment
 
 Logic Apps are configured to start **3 minutes after deployment** to allow Azure role propagation.
 
 No manual action required - they will start automatically.
-
-## Redeployment
-
-Role assignments are generated with deployment-scoped unique identifiers. This means you can safely delete all resources and redeploy without running into `RoleAssignmentUpdateNotPermitted` errors. Previous role assignments from old deployments are automatically orphaned and do not affect the new deployment.
 
 ## About SOCRadar
 
