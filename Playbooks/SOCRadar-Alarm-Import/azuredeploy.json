@@ -92,7 +92,7 @@
         },
         "SentinelRoleLevel": {
             "type": "string",
-            "defaultValue": "Contributor",
+            "defaultValue": "Responder",
             "allowedValues": ["Contributor", "Responder"],
             "metadata": { "description": "Sentinel role for Logic App. Responder sufficient for incident ops (least-privilege)." }
         }
