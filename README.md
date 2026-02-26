@@ -26,7 +26,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `WorkspaceResourceGroup` | *(same as deployment RG)* | Set if your workspace is in a different resource group |
-| `SentinelRoleLevel` | Contributor | `Responder` for least-privilege (no incident delete) |
+| `SentinelRoleLevel` | Responder | Sentinel role for Logic Apps (see [Role Selection](#role-selection)) |
 | `PollingIntervalMinutes` | 5 | How often to check for alarms (1-60 min) |
 | `InitialLookbackMinutes` | 600 | First run lookback (default: 10 hours) |
 | `EnableAuditLogging` | true | Log operations to Log Analytics |
@@ -71,6 +71,17 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
   - Incident correlation
   - Audit log analysis
   - Alert rules for scheduled analytics
+
+## Role Selection
+
+The template assigns a Sentinel role to Logic App managed identities. Two options are available:
+
+| Role | Permissions | Use Case |
+|------|------------|----------|
+| **Responder** (default) | Create, update, close, classify incidents | Sufficient for this integration |
+| **Contributor** | All Responder permissions + delete incidents, manage analytics rules, settings | Required if your environment has custom automation rules that depend on Contributor-level access |
+
+The default is **Responder**, following the least-privilege principle. If your organization's automation rules or policies require Contributor-level access for integrations, set `SentinelRoleLevel` to `Contributor` during deployment.
 
 ## Cross-Region / Cross-Resource-Group
 
