@@ -65,6 +65,11 @@
             "defaultValue": false,
             "metadata": { "description": "Enable writing alarms to custom Log Analytics table (SOCRadar_Alarms_CL)" }
         },
+        "EnableEntityMapping": {
+            "type": "bool",
+            "defaultValue": true,
+            "metadata": { "description": "Create entity bookmarks (IP, Domain, URL) linked to incidents for investigation graph" }
+        },
         "DceEndpoint": {
             "type": "string",
             "defaultValue": "",
@@ -150,6 +155,7 @@
                         "InitialLookbackMinutes": { "type": "Int" },
                         "ImportAllStatuses": { "type": "Bool", "defaultValue": false },
                         "EnableAlarmsTable": { "type": "Bool", "defaultValue": false },
+                        "EnableEntityMapping": { "type": "Bool", "defaultValue": true },
                         "DceEndpoint": { "type": "String", "defaultValue": "" },
                         "AlarmsDcrImmutableId": { "type": "String", "defaultValue": "" },
                         "AlarmsStreamName": { "type": "String", "defaultValue": "Custom-SOCRadar_Alarms_CL" },
@@ -464,9 +470,50 @@
                                                         },
                                                         "runAfter": { "Build_Tags": ["Succeeded"] }
                                                     },
-                                                    "Check_Audit_Enabled": {
+                                                    "Check_Entity_Mapping_Enabled": {
                                                         "type": "If",
                                                         "runAfter": { "Check_If_Open_Status": ["Succeeded"] },
+                                                        "expression": { "and": [{ "equals": ["@parameters('EnableEntityMapping')", true] }] },
+                                                        "actions": {
+                                                            "Build_Entity_Mappings": {
+                                                                "type": "Compose",
+                                                                "inputs": "@json(replace(concat('[', if(not(empty(coalesce(items('For_Each_Alarm')?['content']?['ip_address'], ''))), concat('{\"entityType\":\"IP\",\"fieldMappings\":[{\"identifier\":\"Address\",\"value\":\"', trim(first(split(replace(coalesce(items('For_Each_Alarm')?['content']?['ip_address'], ''), ' ', ''), ','))), '\"}]},'), ''), if(not(empty(coalesce(items('For_Each_Alarm')?['content']?['phishing_domain'], ''))), concat('{\"entityType\":\"DNS\",\"fieldMappings\":[{\"identifier\":\"DomainName\",\"value\":\"', coalesce(items('For_Each_Alarm')?['content']?['phishing_domain'], ''), '\"}]},'), ''), if(not(empty(coalesce(items('For_Each_Alarm')?['content']?['phishing_domain_url'], ''))), concat('{\"entityType\":\"URL\",\"fieldMappings\":[{\"identifier\":\"Url\",\"value\":\"', replace(coalesce(items('For_Each_Alarm')?['content']?['phishing_domain_url'], ''), '\"', ''), '\"}]}'), ''), ']'), ',]', ']'))",
+                                                                "runAfter": {}
+                                                            },
+                                                            "Check_Has_Entities": {
+                                                                "type": "If",
+                                                                "expression": { "and": [{ "greater": ["@length(outputs('Build_Entity_Mappings'))", 0] }] },
+                                                                "actions": {
+                                                                    "Create_Entity_Bookmark": {
+                                                                        "type": "Http",
+                                                                        "inputs": {
+                                                                            "method": "PUT",
+                                                                            "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/@{guid()}?api-version=2025-07-01-preview",
+                                                                            "headers": { "Content-Type": "application/json" },
+                                                                            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://management.azure.com" },
+                                                                            "body": {
+                                                                                "properties": {
+                                                                                    "displayName": "SOCRadar Entities: #@{items('For_Each_Alarm')?['alarm_id']} - @{coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], 'Alert')}",
+                                                                                    "query": "SecurityIncident | where Title contains '@{items('For_Each_Alarm')?['alarm_id']}'",
+                                                                                    "entityMappings": "@outputs('Build_Entity_Mappings')",
+                                                                                    "labels": ["SOCRadar", "EntityMapping"],
+                                                                                    "eventTime": "@{utcNow()}"
+                                                                                }
+                                                                            },
+                                                                            "retryPolicy": { "type": "exponential", "count": 3, "interval": "PT10S", "maximumInterval": "PT5M" }
+                                                                        },
+                                                                        "runAfter": {}
+                                                                    }
+                                                                },
+                                                                "else": { "actions": {} },
+                                                                "runAfter": { "Build_Entity_Mappings": ["Succeeded"] }
+                                                            }
+                                                        },
+                                                        "else": { "actions": {} }
+                                                    },
+                                                    "Check_Audit_Enabled": {
+                                                        "type": "If",
+                                                        "runAfter": { "Check_Entity_Mapping_Enabled": ["Succeeded"] },
                                                         "expression": { "and": [{ "equals": ["@parameters('EnableAuditLogging')", true] }] },
                                                         "actions": {
                                                             "Log_Audit_Event": {
@@ -550,6 +597,7 @@
                     "AuditDcrImmutableId": { "value": "[parameters('AuditDcrImmutableId')]" },
                     "AuditStreamName": { "value": "[variables('AuditStreamName')]" },
                     "EnableAlarmsTable": { "value": "[parameters('EnableAlarmsTable')]" },
+                    "EnableEntityMapping": { "value": "[parameters('EnableEntityMapping')]" },
                     "DceEndpoint": { "value": "[parameters('DceEndpoint')]" },
                     "AlarmsDcrImmutableId": { "value": "[parameters('AlarmsDcrImmutableId')]" },
                     "AlarmsStreamName": { "value": "[parameters('AlarmsStreamName')]" },
