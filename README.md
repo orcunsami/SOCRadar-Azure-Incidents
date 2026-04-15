@@ -114,5 +114,6 @@ Learn more at [socradar.io](https://socradar.io)
 
 ## Support
 
-- **Documentation:** [Microsoft Sentinel Integration Guide](https://help.socradar.io/hc/en-us/articles/9398150200593-Microsoft-Azure-Sentinel-SIEM-Integration)
+- **Public Documentation:** [Microsoft Sentinel Integration — One-Click Deployment Guide](https://github.com/Radargoger/azure-one-click-documentations/blob/main/azureincidents.md)
+- **Detailed Documentation (SOCRadar customers):** [Microsoft Azure Sentinel Integration (Bi-Directional)](https://help.socradar.io/hc/en-us/articles/41316851769745-Microsoft-Azure-Sentinel-Integration-Bi-Directional)
 - **Support:** integration@socradar.io
