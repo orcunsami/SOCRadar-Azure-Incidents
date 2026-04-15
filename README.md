@@ -34,16 +34,17 @@ flowchart LR
 
 ### Optional Parameters
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `WorkspaceResourceGroup` | *(same as deployment RG)* | Set if your workspace is in a different resource group |
-| `SentinelRoleLevel` | Responder | Sentinel role for Logic Apps (see [Role Selection](#role-selection)) |
-| `PollingIntervalMinutes` | 5 | How often to check for alarms (1-60 min) |
-| `InitialLookbackMinutes` | 600 | First run lookback (default: 10 hours) |
-| `EnableAuditLogging` | true | Log operations to Log Analytics |
-| `EnableAlarmsTable` | true | Store alarms in SOCRadar_Alarms_CL table for analytics |
-| `EnableWorkbook` | true | Deploy SOCRadar Analytics Dashboard |
-| `TableRetentionDays` | 365 | Data retention (30-730 days) |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `WorkspaceResourceGroup` | string | *(same as deployment RG)* | Set if your workspace is in a different resource group |
+| `SentinelRoleLevel` | dropdown | `Responder` | Sentinel role for Logic Apps. Options: `Responder` (least-privilege, sufficient) or `Contributor` (see [Role Selection](#role-selection)) |
+| `PollingIntervalMinutes` | int | `5` | How often to check for new alarms (1-60 min). Lower = more real-time, higher = fewer API calls |
+| `InitialLookbackMinutes` | int | `600` | First run lookback in minutes (default 10 hours). Subsequent runs use PollingInterval only |
+| `ImportAllStatuses` | bool | `false` | `false` = only OPEN alarms imported (recommended). `true` = imports all statuses including RESOLVED, FALSE_POSITIVE, MITIGATED |
+| `EnableAuditLogging` | bool | `true` | `true` = writes Import/Sync/Error events to `SOCRadarAuditLog_CL`. `false` = skips audit writes, no DCR/DCE created |
+| `EnableAlarmsTable` | bool | `true` | `true` = stores full alarm JSON in `SOCRadar_Alarms_CL` for analytics and hunting queries. `false` = alarms only become Sentinel incidents |
+| `EnableWorkbook` | bool | `true` | `true` = deploys SOCRadar Analytics Dashboard workbook. `false` = no workbook |
+| `TableRetentionDays` | int | `365` | Data retention for custom tables (30-730 days). Affects `SOCRadar_Alarms_CL` and `SOCRadarAuditLog_CL` |
 
 ## What Gets Deployed
 
