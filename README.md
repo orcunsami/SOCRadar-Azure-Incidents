@@ -8,7 +8,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 ### Alarm Import
 
-The Alarm-Import playbook polls SOCRadar every 5 minutes, deduplicates by existing title, and creates Microsoft Sentinel incidents tagged with SOCRadar, alarm type, and subtype.
+The Alarm-Import playbook polls SOCRadar on a configurable interval, deduplicates by existing title, and creates Microsoft Sentinel incidents tagged with SOCRadar, alarm type, and subtype. By default only OPEN alarms are imported; you can change the interval and choose to import all statuses at deploy time.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,7 @@ flowchart LR
 
 ### Alarm Sync
 
-The Alarm-Sync playbook finds closed Sentinel incidents tagged SOCRadar, maps Sentinel classification to SOCRadar status, updates SOCRadar, and marks the incident with a Synced tag.
+The Alarm-Sync playbook finds closed Sentinel incidents tagged SOCRadar, maps Sentinel classification to SOCRadar status, updates SOCRadar, and marks the incident with a Synced tag. Polling interval is configurable at deploy time.
 
 ```mermaid
 flowchart LR
@@ -26,9 +26,9 @@ flowchart LR
     B --> C["SOCRadar Platform<br/>status + severity update"]
 ```
 
-### Analytics (optional)
+### Analytics
 
-When enabled, alarms and audit events are written to custom Log Analytics tables. Hunting queries, analytic rules, and the workbook all read from these tables.
+Alarms and audit events can also be written to custom Log Analytics tables. Hunting queries, analytic rules, and the workbook all read from these tables. You can turn audit logging, the alarms table, and the workbook on or off independently at deploy time.
 
 ```mermaid
 flowchart LR
@@ -38,6 +38,8 @@ flowchart LR
     C --> E["Analytic Rules"]
     C --> F["SOCRadar Dashboard<br/>Workbook"]
 ```
+
+> Polling interval, lookback window, status filter, audit logging, alarms table, workbook and retention are all deploy-time parameters — see [Configuration](#configuration).
 
 ## Prerequisites
 
