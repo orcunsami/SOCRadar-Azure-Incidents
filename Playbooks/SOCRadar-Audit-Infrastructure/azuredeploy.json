@@ -6,7 +6,7 @@
         "description": "Creates Log Analytics custom table and Data Collection Rule for SOCRadar audit logging",
         "version": "1.0.0",
         "author": "SOCRadar",
-        "lastUpdateTime": "2026-02-01T00:00:00.000Z"
+        "lastUpdateTime": "2026-02-19T00:00:00.000Z"
     },
     "parameters": {
         "WorkspaceName": {
@@ -26,24 +26,33 @@
         }
     },
     "variables": {
-        "TableName": "SOCRadarAuditLog_CL",
-        "DcrName": "SOCRadar-Audit-DCR",
-        "StreamName": "Custom-SOCRadarAuditLog_CL",
         "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]"
     },
     "resources": [
         {
+            "type": "Microsoft.Insights/dataCollectionEndpoints",
+            "apiVersion": "2023-03-11",
+            "name": "SOCRadar-Audit-DCE",
+            "location": "[parameters('WorkspaceLocation')]",
+            "properties": {
+                "description": "Data Collection Endpoint for SOCRadar audit log ingestion",
+                "networkAcls": {
+                    "publicNetworkAccess": "Enabled"
+                }
+            }
+        },
+        {
             "type": "Microsoft.OperationalInsights/workspaces/tables",
             "apiVersion": "2022-10-01",
-            "name": "[concat(parameters('WorkspaceName'), '/', variables('TableName'))]",
+            "name": "[concat(parameters('WorkspaceName'), '/SOCRadarAuditLog_CL')]",
             "properties": {
                 "schema": {
-                    "name": "[variables('TableName')]",
+                    "name": "SOCRadarAuditLog_CL",
                     "columns": [
                         { "name": "TimeGenerated", "type": "datetime", "description": "Event timestamp" },
                         { "name": "EventType", "type": "string", "description": "Type: AlarmImported, AlarmSynced, Error" },
                         { "name": "AlarmId", "type": "string", "description": "SOCRadar alarm ID" },
-                        { "name": "IncidentId", "type": "string", "description": "Sentinel incident ID" },
+                        { "name": "IncidentId", "type": "string", "description": "Microsoft Sentinel incident ID" },
                         { "name": "AlarmType", "type": "string", "description": "Main alarm type" },
                         { "name": "Status", "type": "string", "description": "Alarm status" },
                         { "name": "Severity", "type": "string", "description": "Alarm severity" },
@@ -58,16 +67,17 @@
         {
             "type": "Microsoft.Insights/dataCollectionRules",
             "apiVersion": "2023-03-11",
-            "name": "[variables('DcrName')]",
+            "name": "SOCRadar-Audit-DCR",
             "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
-                "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), variables('TableName'))]"
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', 'SOCRadar-Audit-DCE')]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), 'SOCRadarAuditLog_CL')]"
             ],
-            "kind": "Direct",
             "properties": {
                 "description": "DCR for SOCRadar audit log ingestion",
+                "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', 'SOCRadar-Audit-DCE')]",
                 "streamDeclarations": {
-                    "[variables('StreamName')]": {
+                    "Custom-SOCRadarAuditLog_CL": {
                         "columns": [
                             { "name": "TimeGenerated", "type": "datetime" },
                             { "name": "EventType", "type": "string" },
@@ -84,34 +94,35 @@
                 "destinations": {
                     "logAnalytics": [
                         {
-                            "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                            "workspaceResourceId": "[variables('workspaceResourceId')]",
                             "name": "workspace"
                         }
                     ]
                 },
                 "dataFlows": [
                     {
-                        "streams": [ "[variables('StreamName')]" ],
+                        "streams": [ "Custom-SOCRadarAuditLog_CL" ],
                         "destinations": [ "workspace" ],
                         "transformKql": "source",
-                        "outputStream": "[variables('StreamName')]"
+                        "outputStream": "Custom-SOCRadarAuditLog_CL"
                     }
                 ]
             }
         }
     ],
     "outputs": {
-        "tableName": { "type": "string", "value": "[variables('TableName')]" },
-        "dcrName": { "type": "string", "value": "[variables('DcrName')]" },
-        "dcrId": { "type": "string", "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('DcrName'))]" },
-        "streamName": { "type": "string", "value": "[variables('StreamName')]" },
-        "logsIngestionEndpoint": {
+        "tableName": { "type": "string", "value": "SOCRadarAuditLog_CL" },
+        "dceName": { "type": "string", "value": "SOCRadar-Audit-DCE" },
+        "dceEndpoint": {
             "type": "string",
-            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('DcrName')), '2023-03-11').endpoints.logsIngestion]"
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', 'SOCRadar-Audit-DCE'), '2023-03-11').logsIngestion.endpoint]"
         },
+        "dcrName": { "type": "string", "value": "SOCRadar-Audit-DCR" },
+        "dcrId": { "type": "string", "value": "[resourceId('Microsoft.Insights/dataCollectionRules', 'SOCRadar-Audit-DCR')]" },
+        "streamName": { "type": "string", "value": "Custom-SOCRadarAuditLog_CL" },
         "dcrImmutableId": {
             "type": "string",
-            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('DcrName')), '2023-03-11').immutableId]"
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', 'SOCRadar-Audit-DCR'), '2023-03-11').immutableId]"
         }
     }
 }
