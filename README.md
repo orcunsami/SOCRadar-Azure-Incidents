@@ -3,6 +3,17 @@
 Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Forcunsami%2FSOCRadar-Azure-Incidents%2Fmaster%2Fazuredeploy.json)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SOCRadar[SOCRadar Platform] -->|alarms| Import[SOCRadar-Alarm-Import<br/>Logic App]
+    Import -->|create incidents| Sentinel[Microsoft Sentinel]
+    Sentinel -->|closed incidents| Sync[SOCRadar-Alarm-Sync<br/>Logic App]
+    Sync -->|status update| SOCRadar
+```
+
 ## Prerequisites
 
 - Microsoft Sentinel workspace
@@ -102,5 +113,5 @@ Learn more at [socradar.io](https://socradar.io)
 
 ## Support
 
-- **Documentation:** [docs.socradar.io](https://docs.socradar.io)
-- **Support:** support@socradar.io
+- **Documentation:** [Microsoft Sentinel Integration Guide](https://help.socradar.io/hc/en-us/articles/9398150200593-Microsoft-Azure-Sentinel-SIEM-Integration)
+- **Support:** integration@socradar.io
