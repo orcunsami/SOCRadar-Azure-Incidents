@@ -30,15 +30,6 @@ flowchart LR
 
 Alarms and audit events can also be written to custom Log Analytics tables. Hunting queries, analytic rules, and the workbook all read from these tables. You can turn audit logging, the alarms table, and the workbook on or off independently at deploy time.
 
-```mermaid
-flowchart LR
-    A["SOCRadar-Alarm-Import<br/>Logic App"] --> B["Data Collection Rule"]
-    B --> C[("SOCRadar_Alarms_CL<br/>SOCRadarAuditLog_CL")]
-    C --> D["Hunting Queries"]
-    C --> E["Analytic Rules"]
-    C --> F["SOCRadar Dashboard<br/>Workbook"]
-```
-
 > Polling interval, lookback window, status filter, audit logging, alarms table, workbook and retention are all deploy-time parameters — see [Configuration](#configuration).
 
 ## Prerequisites
