@@ -8,11 +8,63 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 ```mermaid
 flowchart LR
-    SOCRadar[SOCRadar Platform] -->|alarms| Import[SOCRadar-Alarm-Import<br/>Logic App]
-    Import -->|create incidents| Sentinel[Microsoft Sentinel]
-    Sentinel -->|closed incidents| Sync[SOCRadar-Alarm-Sync<br/>Logic App]
-    Sync -->|status update| SOCRadar
+    subgraph EXT["SOCRadar Platform"]
+        API["platform.socradar.com<br/><br/>GET /incidents/v4<br/>POST /alarms/status/change<br/>POST /alarm/severity<br/><br/>Auth: API-Key header"]
+    end
+
+    subgraph LA["Azure Logic Apps"]
+        direction TB
+        Import["SOCRadar-Alarm-Import<br/>Recurrence: 5 min<br/>Pagination · Dedup<br/>OPEN-only filter<br/>3-tag labeling"]
+        Sync["SOCRadar-Alarm-Sync<br/>Recurrence: 5 min<br/>Classification mapping<br/>Synced-tag tracking"]
+    end
+
+    subgraph SEN["Microsoft Sentinel"]
+        direction TB
+        Inc["Incidents<br/>Labels: SOCRadar + type +<br/>subtype + Synced"]
+        HQ["Hunting Queries (5)"]
+        AR["Analytic Rules (3)"]
+        WB["SOCRadar Dashboard<br/>Workbook"]
+    end
+
+    subgraph LAW["Log Analytics (optional)"]
+        direction TB
+        DCE["Data Collection<br/>Endpoint"]
+        DCRA["Alarms DCR"]
+        DCRB["Audit DCR"]
+        Alarms[("SOCRadar_Alarms_CL")]
+        Audit[("SOCRadarAuditLog_CL")]
+    end
+
+    API -->|GET alarms| Import
+    Import -->|PUT incidents<br/>Managed Identity| Inc
+    Import -.->|optional| DCE
+    DCE --> DCRA --> Alarms
+    DCE --> DCRB --> Audit
+
+    Inc -->|closed incidents| Sync
+    Sync -->|POST status + severity| API
+    Sync -->|PUT Synced tag| Inc
+
+    Inc -.-> HQ
+    Inc -.-> AR
+    Alarms -.-> HQ
+    Alarms -.-> WB
+    Audit -.-> HQ
+
+    classDef ext fill:#dae8fc,stroke:#6c8ebf,color:#000
+    classDef logic fill:#fff2cc,stroke:#d6b656,color:#000
+    classDef sentinel fill:#d5e8d4,stroke:#82b366,color:#000
+    classDef law fill:#f8cecc,stroke:#b85450,color:#000
+    class API ext
+    class Import,Sync logic
+    class Inc,HQ,AR,WB sentinel
+    class DCE,DCRA,DCRB,Alarms,Audit law
 ```
+
+**Data flow summary:**
+- **Alarm Import** — SOCRadar API → Logic App → Sentinel Incidents (optional DCR write to custom tables)
+- **Alarm Sync** — Closed Sentinel Incidents → Logic App → SOCRadar status update + Synced tag
+- **Analytics** — Hunting Queries + Analytic Rules + Workbook query incidents and custom tables
 
 ## Prerequisites
 
