@@ -8,7 +8,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 ### Alarm Import
 
-The Alarm-Import playbook polls SOCRadar on a configurable interval, deduplicates by existing title, and creates Microsoft Sentinel incidents tagged with SOCRadar, alarm type, and subtype. By default only OPEN alarms are imported; you can change the interval and choose to import all statuses at deploy time.
+Polls SOCRadar on a configurable interval and creates Microsoft Sentinel incidents. Deduplicates by title, tags with SOCRadar + alarm type + subtype. OPEN alarms only by default; you can import all statuses at deploy time.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,7 @@ flowchart LR
 
 ### Alarm Sync
 
-The Alarm-Sync playbook finds closed Sentinel incidents tagged SOCRadar, maps Sentinel classification to SOCRadar status, updates SOCRadar, and marks the incident with a Synced tag. Polling interval is configurable at deploy time.
+Watches closed Sentinel incidents tagged SOCRadar. Maps the Sentinel classification to a SOCRadar status, updates SOCRadar, and adds a Synced tag to the incident.
 
 ```mermaid
 flowchart LR
@@ -28,110 +28,65 @@ flowchart LR
 
 ### Analytics
 
-Alarms and audit events can also be written to custom Log Analytics tables. Hunting queries, analytic rules, and the workbook all read from these tables. You can turn audit logging, the alarms table, and the workbook on or off independently at deploy time.
-
-> Polling interval, lookback window, status filter, audit logging, alarms table, workbook and retention are all deploy-time parameters — see [Configuration](#configuration).
+Alarms and audit events can also be written to custom Log Analytics tables, which hunting queries, analytic rules, and the workbook read from. You can toggle audit logging, the alarms table, and the workbook at deploy time.
 
 ## Prerequisites
 
 - Microsoft Sentinel workspace
-- SOCRadar API Key
+- SOCRadar API key and Company ID
 
-## Configuration
+## Parameters
 
-### Required Parameters
+### Required
 
 | Parameter | Description |
 |-----------|-------------|
-| `WorkspaceName` | Your Sentinel workspace name (e.g., `my-sentinel-workspace`, NOT the Workspace ID/GUID) |
-| `WorkspaceLocation` | Region of your workspace (e.g., `centralus`, `northeurope`) |
+| `WorkspaceName` | Sentinel workspace name (not the GUID) |
+| `WorkspaceLocation` | Workspace region (e.g., `northeurope`) |
 | `SocradarApiKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
-> **Note:** You can find your Workspace Name in Azure Portal > Log Analytics workspaces > your workspace > Overview > "Name" field.
+### Optional
 
-### Optional Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `WorkspaceResourceGroup` | string | *(same as deployment RG)* | Set if your workspace is in a different resource group |
-| `SentinelRoleLevel` | dropdown | `Responder` | Sentinel role for Logic Apps. Options: `Responder` (least-privilege, sufficient) or `Contributor` (see [Role Selection](#role-selection)) |
-| `PollingIntervalMinutes` | int | `5` | How often to check for new alarms (1-60 min). Lower = more real-time, higher = fewer API calls |
-| `InitialLookbackMinutes` | int | `600` | First run lookback in minutes (default 10 hours). Subsequent runs use PollingInterval only |
-| `ImportAllStatuses` | bool | `false` | `false` = only OPEN alarms imported (recommended). `true` = imports all statuses including RESOLVED, FALSE_POSITIVE, MITIGATED |
-| `EnableAuditLogging` | bool | `true` | `true` = writes Import/Sync/Error events to `SOCRadarAuditLog_CL`. `false` = skips audit writes, no DCR/DCE created |
-| `EnableAlarmsTable` | bool | `true` | `true` = stores full alarm JSON in `SOCRadar_Alarms_CL` for analytics and hunting queries. `false` = alarms only become Sentinel incidents |
-| `EnableWorkbook` | bool | `true` | `true` = deploys SOCRadar Analytics Dashboard workbook. `false` = no workbook |
-| `TableRetentionDays` | int | `365` | Data retention for custom tables (30-730 days). Affects `SOCRadar_Alarms_CL` and `SOCRadarAuditLog_CL` |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `WorkspaceResourceGroup` | deployment RG | Set if workspace is in a different RG |
+| `SentinelRoleLevel` | `Responder` | `Responder` (least-privilege) or `Contributor` |
+| `PollingIntervalMinutes` | `5` | How often to check for alarms (1–60) |
+| `InitialLookbackMinutes` | `600` | First-run lookback window (10 hours) |
+| `ImportAllStatuses` | `false` | `true` imports RESOLVED / FALSE_POSITIVE / MITIGATED too |
+| `EnableAuditLogging` | `true` | Writes audit events to `SOCRadarAuditLog_CL` |
+| `EnableAlarmsTable` | `true` | Stores full alarm JSON in `SOCRadar_Alarms_CL` |
+| `EnableWorkbook` | `true` | Deploys the SOCRadar Dashboard workbook |
+| `TableRetentionDays` | `365` | Retention for custom tables (30–730) |
 
 ## What Gets Deployed
 
-- **SOCRadar-Alarm-Import** - Imports alarms from SOCRadar as Sentinel incidents
-- **SOCRadar-Alarm-Sync** - Syncs closed incidents back to SOCRadar
-- **SOCRadar_Alarms_CL** - Custom table for alarm analytics (if EnableAlarmsTable=true)
-- **SOCRadar Analytics Dashboard** - Workbook with charts and tables (if EnableWorkbook=true)
-- **SOCRadarAuditLog_CL** - Audit log table (if EnableAuditLogging=true)
-- **Data Collection Endpoint & Rules** - For data ingestion
-
-## Key Features
-
-**Alarm Import**
-- Automatically imports SOCRadar alarms as Sentinel incidents
-- Severity and status mapping
-- Duplicate prevention
-- Tags for categorization
-
-**Bidirectional Sync**
-- Closed incidents in Sentinel update alarm status in SOCRadar
-- Classification mapping: TruePositive to Resolved, FalsePositive to False Positive
-
-**Audit Logging**
-- Full alarm JSON stored in Log Analytics
-- Query with KQL for reporting
-
-**Analytics Dashboard**
-- Severity and status distribution charts
-- Alarm timeline visualization
-- Top alarm types bar chart
-- Recent alarms table
-
-**KQL Queries**
-- See `socradar-kql-queries.kql` for 24 ready-to-use queries including:
-  - Alarm overview and trends
-  - Incident correlation
-  - Audit log analysis
-  - Alert rules for scheduled analytics
+- **SOCRadar-Alarm-Import** Logic App — imports alarms as incidents
+- **SOCRadar-Alarm-Sync** Logic App — syncs closed incidents back
+- **SOCRadar_Alarms_CL** custom table (optional)
+- **SOCRadarAuditLog_CL** audit table (optional)
+- **SOCRadar Dashboard** workbook (optional)
+- Data Collection Endpoint and Rules for custom tables
 
 ## Role Selection
 
-The template assigns a Sentinel role to Logic App managed identities. Two options are available:
+Logic Apps use Managed Identity with a Sentinel role:
 
-| Role | Permissions | Use Case |
-|------|------------|----------|
-| **Responder** (default) | Create, update, close, classify incidents | Sufficient for this integration |
-| **Contributor** | All Responder permissions + delete incidents, manage analytics rules, settings | Required if your environment has custom automation rules that depend on Contributor-level access |
+- **Responder** (default) — create, update, close, classify incidents. Sufficient for this integration.
+- **Contributor** — needed only if your environment has automation rules that require elevated access.
 
-The default is **Responder**, following the least-privilege principle. If your organization's automation rules or policies require Contributor-level access for integrations, set `SentinelRoleLevel` to `Contributor` during deployment.
+## Cross-Region / Cross-RG
 
-## Cross-Region / Cross-Resource-Group
-
-- If your workspace is in a different **region**, set `WorkspaceLocation` to match your workspace region.
-- If your workspace is in a different **resource group**, set `WorkspaceResourceGroup`. Custom tables, workbook, and audit logging require same-RG deployment.
+- Different region → set `WorkspaceLocation`.
+- Different resource group → set `WorkspaceResourceGroup`. Custom tables and workbook must deploy into the workspace RG.
 
 ## Post-Deployment
 
-Logic Apps are configured to start **3 minutes after deployment** to allow Azure role propagation.
-
-No manual action required - they will start automatically.
-
-## About SOCRadar
-
-SOCRadar is an Extended Threat Intelligence (XTI) platform that provides actionable threat intelligence, digital risk protection, and external attack surface management.
-
-Learn more at [socradar.io](https://socradar.io)
+Logic Apps start automatically 3 minutes after deployment (role propagation).
 
 ## Support
 
-- **Public Documentation:** [Microsoft Sentinel Integration — One-Click Deployment Guide](https://github.com/Radargoger/azure-one-click-documentations/blob/main/azureincidents.md)
+- **Public Documentation:** [One-Click Deployment Guide](https://github.com/Radargoger/azure-one-click-documentations/blob/main/azureincidents.md)
 - **Detailed Documentation (SOCRadar customers):** [Microsoft Azure Sentinel Integration (Bi-Directional)](https://help.socradar.io/hc/en-us/articles/41316851769745-Microsoft-Azure-Sentinel-Integration-Bi-Directional)
-- **Support:** integration@socradar.io
+- **Support email:** integration@socradar.io
