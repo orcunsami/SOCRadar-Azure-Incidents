@@ -3,7 +3,7 @@
     "contentVersion": "1.0.0",
     "metadata": {
         "title": "SOCRadar-IOC-Enrichment",
-        "description": "Enriches Microsoft Sentinel incident entities (IP, domain, URL, file hash) with SOCRadar IOC Enrichment intelligence (risk score, signal strength, categorization, threat actors). Triggers on incident creation, queries SOCRadar indicator_details API, and posts an enrichment comment to the incident.",
+        "description": "Enriches Microsoft Sentinel incident entities (IP, domain, URL, file hash) with SOCRadar IOC Enrichment intelligence (risk score, signal strength, categorization, threat actors). Triggers on incident creation, queries SOCRadar indicator_details API, and posts an enrichment comment to the incident. Handles not-found (404), async (202), and benign indicators gracefully.",
         "version": "1.0.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-06-26T00:00:00.000Z"
@@ -32,7 +32,7 @@
             "defaultValue": 0,
             "minValue": 0,
             "maxValue": 100,
-            "metadata": { "description": "Only post an enrichment comment when the SOCRadar risk score is greater than or equal to this value. Default 0 = comment on every enriched indicator." }
+            "metadata": { "description": "Only post an enrichment comment when the SOCRadar risk score is greater than or equal to this value. Default 0 = comment on every indicator that has signal (benign whitelisted indicators with score 0 are skipped to reduce noise)." }
         },
         "SentinelRoleLevel": {
             "type": "string",
@@ -127,57 +127,93 @@
                                                     "indicator": "@{outputs('Get_Indicator_Value')}",
                                                     "fields": ["indicator_details"]
                                                 },
-                                                "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "maximumInterval": "PT1H" }
+                                                "retryPolicy": { "type": "exponential", "count": 3, "interval": "PT10S", "maximumInterval": "PT2M" }
                                             },
                                             "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
                                             "runAfter": {}
                                         },
-                                        "If_Enriched_And_Above_Threshold": {
-                                            "type": "If",
-                                            "expression": {
-                                                "and": [
-                                                    { "equals": ["@outputs('Enrich_IOC')?['statusCode']", 200] },
-                                                    { "greaterOrEquals": ["@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)", "@parameters('RiskScoreThreshold')"] }
-                                                ]
-                                            },
-                                            "actions": {
-                                                "Select_ThreatActor_Names": {
-                                                    "type": "Select",
-                                                    "inputs": {
-                                                        "from": "@coalesce(body('Enrich_IOC')?['top_classifications']?['threat_actors'], json('[]'))",
-                                                        "select": "@item()?['name']"
-                                                    },
-                                                    "runAfter": {}
-                                                },
-                                                "Select_Malware_Names": {
-                                                    "type": "Select",
-                                                    "inputs": {
-                                                        "from": "@coalesce(body('Enrich_IOC')?['top_classifications']?['malwares'], json('[]'))",
-                                                        "select": "@item()?['name']"
-                                                    },
-                                                    "runAfter": {}
-                                                },
-                                                "Add_Comment_to_Incident": {
-                                                    "type": "ApiConnection",
-                                                    "inputs": {
-                                                        "host": {
-                                                            "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                        "Handle_Response": {
+                                            "type": "Switch",
+                                            "expression": "@string(coalesce(outputs('Enrich_IOC')?['statusCode'], 0))",
+                                            "runAfter": { "Enrich_IOC": ["Succeeded", "Failed", "TimedOut"] },
+                                            "cases": {
+                                                "Enriched_200": {
+                                                    "case": "200",
+                                                    "actions": {
+                                                        "Select_ThreatActor_Names": {
+                                                            "type": "Select",
+                                                            "inputs": {
+                                                                "from": "@coalesce(body('Enrich_IOC')?['top_classifications']?['threat_actors'], json('[]'))",
+                                                                "select": "@item()?['name']"
+                                                            },
+                                                            "runAfter": {}
                                                         },
-                                                        "method": "post",
-                                                        "path": "/Incidents/Comment",
-                                                        "body": {
-                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                            "message": "<h3>SOCRadar IOC Enrichment</h3><b>Indicator:</b> @{coalesce(body('Enrich_IOC')?['details']?['name'], outputs('Get_Indicator_Value'))} (@{coalesce(body('Enrich_IOC')?['details']?['object_type'], 'unknown')})<br><b>Risk Score:</b> @{coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)} / 100<br><b>Signal Strength:</b> @{if(empty(body('Enrich_IOC')?['details']?['ioc_signal_strength']), 'N/A', body('Enrich_IOC')?['details']?['ioc_signal_strength'])}<br><b>Whitelisted:</b> @{coalesce(body('Enrich_IOC')?['details']?['is_whitelisted'], false)}<br><b>Categories:</b> malware=@{coalesce(body('Enrich_IOC')?['categorization']?['malware'], false)}, threat_actor=@{coalesce(body('Enrich_IOC')?['categorization']?['threat_actor'], false)}, tor=@{coalesce(body('Enrich_IOC')?['categorization']?['tor'], false)}, vpn=@{coalesce(body('Enrich_IOC')?['categorization']?['vpn'], false)}, proxy=@{coalesce(body('Enrich_IOC')?['categorization']?['proxy'], false)}, scanner=@{coalesce(body('Enrich_IOC')?['categorization']?['scanner'], false)}<br><b>Threat Actors:</b> @{if(empty(body('Select_ThreatActor_Names')), 'None', join(body('Select_ThreatActor_Names'), ', '))}<br><b>Malware:</b> @{if(empty(body('Select_Malware_Names')), 'None', join(body('Select_Malware_Names'), ', '))}<br><b>Campaign:</b> @{if(empty(body('Enrich_IOC')?['top_classifications']?['campaign']), 'N/A', body('Enrich_IOC')?['top_classifications']?['campaign'])}<br><b>Geo / ASN:</b> @{coalesce(body('Enrich_IOC')?['details']?['extra_info']?['city_name'], 'N/A')}, @{coalesce(body('Enrich_IOC')?['details']?['extra_info']?['region_name'], 'N/A')} (@{coalesce(body('Enrich_IOC')?['details']?['extra_info']?['asn_name'], 'N/A')})<br><b>Feed Sources:</b> @{length(coalesce(body('Enrich_IOC')?['details']?['feed_source_list'], json('[]')))}<br><b>VirusTotal:</b> @{coalesce(body('Enrich_IOC')?['details']?['vt_link'], 'N/A')}<br><i>Powered by SOCRadar IOC Enrichment</i>"
+                                                        "Select_Malware_Names": {
+                                                            "type": "Select",
+                                                            "inputs": {
+                                                                "from": "@coalesce(body('Enrich_IOC')?['top_classifications']?['malwares'], json('[]'))",
+                                                                "select": "@item()?['name']"
+                                                            },
+                                                            "runAfter": {}
+                                                        },
+                                                        "If_Has_Signal": {
+                                                            "type": "If",
+                                                            "expression": {
+                                                                "and": [
+                                                                    { "greaterOrEquals": ["@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)", "@parameters('RiskScoreThreshold')"] },
+                                                                    { "not": { "and": [
+                                                                        { "equals": ["@coalesce(body('Enrich_IOC')?['details']?['is_whitelisted'], false)", true] },
+                                                                        { "equals": ["@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)", 0] }
+                                                                    ] } }
+                                                                ]
+                                                            },
+                                                            "actions": {
+                                                                "Add_Comment_to_Incident": {
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "path": "/Incidents/Comment",
+                                                                        "body": {
+                                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                            "message": "<h3>SOCRadar IOC Enrichment</h3><b>Indicator:</b> @{replace(replace(replace(coalesce(body('Enrich_IOC')?['details']?['name'], outputs('Get_Indicator_Value')), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')} (@{coalesce(body('Enrich_IOC')?['details']?['object_type'], 'unknown')})<br><b>Risk Score:</b> @{coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)} / 100<br><b>Signal Strength:</b> @{if(empty(string(body('Enrich_IOC')?['details']?['ioc_signal_strength'])), 'N/A', string(body('Enrich_IOC')?['details']?['ioc_signal_strength']))}<br><b>Whitelisted:</b> @{coalesce(body('Enrich_IOC')?['details']?['is_whitelisted'], false)}<br><b>Categories:</b> malware=@{coalesce(body('Enrich_IOC')?['categorization']?['malware'], false)}, threat_actor=@{coalesce(body('Enrich_IOC')?['categorization']?['threat_actor'], false)}, tor=@{coalesce(body('Enrich_IOC')?['categorization']?['tor'], false)}, vpn=@{coalesce(body('Enrich_IOC')?['categorization']?['vpn'], false)}, proxy=@{coalesce(body('Enrich_IOC')?['categorization']?['proxy'], false)}, scanner=@{coalesce(body('Enrich_IOC')?['categorization']?['scanner'], false)}<br><b>Threat Actors:</b> @{if(empty(body('Select_ThreatActor_Names')), 'None', join(body('Select_ThreatActor_Names'), ', '))}<br><b>Malware:</b> @{if(empty(body('Select_Malware_Names')), 'None', join(body('Select_Malware_Names'), ', '))}<br><b>Campaign:</b> @{if(empty(string(body('Enrich_IOC')?['top_classifications']?['campaign'])), 'N/A', string(body('Enrich_IOC')?['top_classifications']?['campaign']))}<br><b>Geo / ASN:</b> @{coalesce(body('Enrich_IOC')?['details']?['extra_info']?['city_name'], 'N/A')}, @{coalesce(body('Enrich_IOC')?['details']?['extra_info']?['region_name'], 'N/A')} (@{coalesce(body('Enrich_IOC')?['details']?['extra_info']?['asn_name'], 'N/A')})<br><b>Feed Sources:</b> @{length(coalesce(body('Enrich_IOC')?['details']?['feed_source_list'], json('[]')))}<br><b>VirusTotal:</b> @{coalesce(body('Enrich_IOC')?['details']?['vt_link'], 'N/A')}<br><i>Powered by SOCRadar IOC Enrichment</i>"
+                                                                        }
+                                                                    },
+                                                                    "runAfter": {}
+                                                                }
+                                                            },
+                                                            "else": { "actions": {} },
+                                                            "runAfter": {
+                                                                "Select_ThreatActor_Names": ["Succeeded"],
+                                                                "Select_Malware_Names": ["Succeeded"]
+                                                            }
                                                         }
-                                                    },
-                                                    "runAfter": {
-                                                        "Select_ThreatActor_Names": ["Succeeded"],
-                                                        "Select_Malware_Names": ["Succeeded"]
+                                                    }
+                                                },
+                                                "Pending_202": {
+                                                    "case": "202",
+                                                    "actions": {
+                                                        "Add_Pending_Comment": {
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                                                },
+                                                                "method": "post",
+                                                                "path": "/Incidents/Comment",
+                                                                "body": {
+                                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                    "message": "<h3>SOCRadar IOC Enrichment</h3><b>Indicator:</b> @{replace(replace(replace(outputs('Get_Indicator_Value'), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')}<br>This indicator is being enriched by SOCRadar (first lookup). Re-run this playbook in a few minutes to get the full enrichment.<br><i>Powered by SOCRadar IOC Enrichment</i>"
+                                                                }
+                                                            },
+                                                            "runAfter": {}
+                                                        }
                                                     }
                                                 }
                                             },
-                                            "else": { "actions": {} },
-                                            "runAfter": { "Enrich_IOC": ["Succeeded"] }
+                                            "default": { "actions": {} }
                                         }
                                     },
                                     "else": { "actions": {} },
@@ -254,6 +290,6 @@
         "trigger": { "type": "string", "value": "Microsoft Sentinel incident creation" },
         "enrichmentApi": { "type": "string", "value": "SOCRadar IOC Enrichment (indicator_details)" },
         "riskScoreThreshold": { "type": "int", "value": "[parameters('RiskScoreThreshold')]" },
-        "note": { "type": "string", "value": "After deployment, create a Microsoft Sentinel automation rule to run this playbook on incident creation (portal step)." }
+        "note": { "type": "string", "value": "After deployment, create a Microsoft Sentinel automation rule to run this playbook on incident creation (portal step). Handles 200 (enrich), 202 (pending), 404/4xx (skip) gracefully." }
     }
 }
