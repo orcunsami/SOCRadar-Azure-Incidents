@@ -41,7 +41,11 @@ flowchart LR
     C --> D["Incident Comment<br/>risk score + context"]
 ```
 
-Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own. Notes:
+Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own:
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Forcunsami%2FSOCRadar-Azure-Incidents%2Fmaster%2FPlaybooks%2FSOCRadar-IOC-Enrichment%2Fazuredeploy.json)
+
+Notes:
 
 - Uses a dedicated **IOC Enrichment API key** (Standard Licensed APIs entitlement — contact integration@socradar.io).
 - `RiskScoreThreshold` (default `0`) — only comments when the score is at or above this value.
