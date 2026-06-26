@@ -1,6 +1,6 @@
 # SOCRadar Alarms for Microsoft Sentinel
 
-Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
+Bidirectional integration between SOCRadar and Microsoft Sentinel. Alarms come in as incidents, closed incidents sync back.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Forcunsami%2FSOCRadar-Azure-Incidents%2Fmaster%2Fazuredeploy.json)
 
@@ -8,7 +8,7 @@ Bidirectional integration between SOCRadar XTI Platform and Microsoft Sentinel.
 
 ### Alarm Import
 
-Polls SOCRadar on a configurable interval and creates Microsoft Sentinel incidents. Deduplicates by title, tags with SOCRadar + alarm type + subtype. OPEN alarms only by default; you can import all statuses at deploy time.
+Pulls alarms from SOCRadar and opens Sentinel incidents. Deduplicates by title, tags with the alarm type/subtype. OPEN only by default.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,7 @@ flowchart LR
 
 ### Alarm Sync
 
-Watches closed Sentinel incidents tagged SOCRadar. Maps the Sentinel classification to a SOCRadar status, updates SOCRadar, and adds a Synced tag to the incident.
+When you close a SOCRadar-tagged incident in Sentinel, the classification maps back to a SOCRadar status and the alarm is updated.
 
 ```mermaid
 flowchart LR
@@ -28,7 +28,25 @@ flowchart LR
 
 ### Analytics
 
-Alarms and audit events can also be written to custom Log Analytics tables, which hunting queries, analytic rules, and the workbook read from. You can toggle audit logging, the alarms table, and the workbook at deploy time.
+Alarms and audit events are also written to custom Log Analytics tables. Hunting queries, analytic rules, and the workbook read from them. All three (audit, alarms table, workbook) are toggleable at deploy time.
+
+### IOC Enrichment (optional add-on)
+
+Deployed separately from the main template. When an incident is created, this playbook looks up each related entity (IP, domain, URL, file hash) in **SOCRadar IOC Enrichment** and posts a comment with the risk score, signal strength, categorization, and threat actors.
+
+```mermaid
+flowchart LR
+    A["Microsoft Sentinel<br/>Incident"] --> B["SOCRadar-IOC-Enrichment<br/>Logic App"]
+    B --> C["SOCRadar IOC Enrichment<br/>indicator_details API"]
+    C --> D["Incident Comment<br/>risk score + context"]
+```
+
+Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own. Notes:
+
+- Uses a dedicated **IOC Enrichment API key** (Standard Licensed APIs entitlement — contact integration@socradar.io).
+- `RiskScoreThreshold` (default `0`) — only comments when the score is at or above this value.
+- After deployment, create a Microsoft Sentinel **automation rule** (when an incident is created → run this playbook) in the portal.
+- Microsoft Sentinel **Responder** role is sufficient.
 
 ## Prerequisites
 
@@ -71,19 +89,25 @@ Alarms and audit events can also be written to custom Log Analytics tables, whic
 
 ## Role Selection
 
-Logic Apps use Managed Identity with a Sentinel role:
+Logic Apps run with Managed Identity:
 
-- **Responder** (default) — create, update, close, classify incidents. Sufficient for this integration.
-- **Contributor** — needed only if your environment has automation rules that require elevated access.
+- **Responder** (default) — enough for create / update / close / classify.
+- **Contributor** — only if you rely on automation rules that need elevated access.
 
 ## Cross-Region / Cross-RG
 
 - Different region → set `WorkspaceLocation`.
-- Different resource group → set `WorkspaceResourceGroup`. Custom tables and workbook must deploy into the workspace RG.
+- Different resource group → set `WorkspaceResourceGroup`. Custom tables and workbook deploy into the workspace RG.
 
 ## Post-Deployment
 
-Logic Apps start automatically 3 minutes after deployment (role propagation).
+Logic Apps start 3 minutes after deployment, so role assignments have time to propagate.
+
+## Standalone vs. Microsoft Sentinel Content Hub
+
+This repository is the standalone one-click deployment. It provisions the infrastructure (Data Collection Endpoint, Data Collection Rules, and custom tables) as separate resources alongside the Logic Apps.
+
+The same integration is also available as a Microsoft Sentinel Solution via **Content Hub → SOCRadar**. In that distribution, the infrastructure is provisioned inside the Alarm Import playbook template so it shows up under **Automation → Playbook templates**. Both paths end up with the same workspace state; choose whichever fits your installation workflow.
 
 ## Support
 
