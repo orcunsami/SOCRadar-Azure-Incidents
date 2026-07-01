@@ -1288,7 +1288,7 @@
             "value": "[if(variables('isExternalWorkspace'), false(), parameters('EnableAuditLogging'))]"
           },
           "AuditDcrEndpoint": {
-            "value": "[if(and(parameters('EnableAuditLogging'), not(variables('isExternalWorkspace'))), reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName')), '2023-03-11').endpoints.logsIngestion, '')]"
+            "value": "[if(and(parameters('EnableAuditLogging'), not(variables('isExternalWorkspace'))), reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('DceName')), '2023-03-11').logsIngestion.endpoint, '')]"
           },
           "AuditDcrImmutableId": {
             "value": "[if(and(parameters('EnableAuditLogging'), not(variables('isExternalWorkspace'))), reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName')), '2023-03-11').immutableId, '')]"
