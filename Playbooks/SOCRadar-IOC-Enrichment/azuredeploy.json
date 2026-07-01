@@ -3,10 +3,10 @@
     "contentVersion": "1.0.0",
     "metadata": {
         "title": "SOCRadar-IOC-Enrichment",
-        "description": "Enriches Microsoft Sentinel incident entities (IP, domain, URL, file hash) with SOCRadar IOC Enrichment intelligence (risk score, signal strength, categorization, threat actors). Triggers on incident creation, queries SOCRadar indicator_details API, and posts an enrichment comment to the incident. Handles not-found (404), async (202), and benign indicators gracefully.",
-        "version": "1.0.0",
+        "description": "Enriches Microsoft Sentinel incident entities (IP, domain, URL, file hash) with SOCRadar IOC Enrichment intelligence (risk score, signal strength, categorization, threat actors). Triggers on incident creation, queries SOCRadar indicator_details API, and posts an enrichment comment to the incident. For SOCRadar-Alarm-Import incidents (which carry no Sentinel entities), it also fetches the original alarm's related entities from SOCRadar by alarm id, so real alarm incidents get enriched too. Handles not-found (404), async (202), and benign indicators gracefully.",
+        "version": "1.1.0",
         "author": "SOCRadar",
-        "lastUpdateTime": "2026-06-26T00:00:00.000Z"
+        "lastUpdateTime": "2026-07-01T00:00:00.000Z"
     },
     "parameters": {
         "PlaybookName": {
@@ -17,6 +17,11 @@
         "SocradarApiKey": {
             "type": "securestring",
             "metadata": { "description": "SOCRadar IOC Enrichment API Key (Standard Licensed APIs entitlement required)" }
+        },
+        "CompanyId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": { "description": "SOCRadar Company ID. Used to fetch the original alarm's related entities from SOCRadar for incidents created by SOCRadar-Alarm-Import (which carry no Sentinel entities). Leave empty to enrich only Sentinel-provided entities." }
         },
         "WorkspaceName": {
             "type": "string",
@@ -81,6 +86,7 @@
                     "parameters": {
                         "$connections": { "defaultValue": {}, "type": "Object" },
                         "SocradarApiKey": { "type": "SecureString" },
+                        "CompanyId": { "type": "String" },
                         "RiskScoreThreshold": { "type": "Int" }
                     },
                     "triggers": {
@@ -96,9 +102,59 @@
                         }
                     },
                     "actions": {
+                        "Extract_Alarm_Id": {
+                            "type": "Compose",
+                            "inputs": "@if(contains(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#'), first(split(last(split(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#')), ' ')), '')",
+                            "runAfter": {}
+                        },
+                        "Get_SOCRadar_Alarm_Entities": {
+                            "type": "If",
+                            "expression": {
+                                "and": [
+                                    { "not": { "equals": ["@outputs('Extract_Alarm_Id')", ""] } },
+                                    { "not": { "equals": ["@parameters('CompanyId')", ""] } }
+                                ]
+                            },
+                            "actions": {
+                                "Fetch_Alarm": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "GET",
+                                        "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/incidents/v4",
+                                        "queries": { "alarm_ids": "@{outputs('Extract_Alarm_Id')}" },
+                                        "headers": { "API-Key": "@{parameters('SocradarApiKey')}" },
+                                        "retryPolicy": { "type": "exponential", "count": 2, "interval": "PT10S", "maximumInterval": "PT1M" }
+                                    },
+                                    "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
+                                    "runAfter": {}
+                                },
+                                "Map_Alarm_Entities": {
+                                    "type": "Select",
+                                    "inputs": {
+                                        "from": "@coalesce(first(body('Fetch_Alarm')?['data'])?['alarm_related_entities'], json('[]'))",
+                                        "select": {
+                                            "properties": {
+                                                "address": "@if(equals(toLower(coalesce(item()?['key'], '')), 'ip'), item()?['value'], null)",
+                                                "domainName": "@if(or(equals(toLower(coalesce(item()?['key'], '')), 'domain'), equals(toLower(coalesce(item()?['key'], '')), 'hostname')), item()?['value'], null)",
+                                                "url": "@if(equals(toLower(coalesce(item()?['key'], '')), 'url'), item()?['value'], null)",
+                                                "hashValue": "@if(equals(toLower(coalesce(item()?['key'], '')), 'hash'), item()?['value'], null)"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": { "Fetch_Alarm": ["Succeeded", "Failed", "TimedOut"] }
+                                }
+                            },
+                            "else": { "actions": {} },
+                            "runAfter": { "Extract_Alarm_Id": ["Succeeded"] }
+                        },
+                        "Build_Entity_List": {
+                            "type": "Compose",
+                            "inputs": "@union(coalesce(triggerBody()?['object']?['properties']?['relatedEntities'], json('[]')), coalesce(body('Map_Alarm_Entities'), json('[]')))",
+                            "runAfter": { "Get_SOCRadar_Alarm_Entities": ["Succeeded"] }
+                        },
                         "For_Each_Entity": {
                             "type": "Foreach",
-                            "foreach": "@coalesce(triggerBody()?['object']?['properties']?['relatedEntities'], json('[]'))",
+                            "foreach": "@outputs('Build_Entity_List')",
                             "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
                             "actions": {
                                 "Get_Indicator_Value": {
@@ -220,7 +276,7 @@
                                     "runAfter": { "Get_Indicator_Value": ["Succeeded"] }
                                 }
                             },
-                            "runAfter": {}
+                            "runAfter": { "Build_Entity_List": ["Succeeded"] }
                         }
                     }
                 },
@@ -236,6 +292,7 @@
                         }
                     },
                     "SocradarApiKey": { "value": "[parameters('SocradarApiKey')]" },
+                    "CompanyId": { "value": "[parameters('CompanyId')]" },
                     "RiskScoreThreshold": { "value": "[parameters('RiskScoreThreshold')]" }
                 }
             }
@@ -290,6 +347,6 @@
         "trigger": { "type": "string", "value": "Microsoft Sentinel incident creation" },
         "enrichmentApi": { "type": "string", "value": "SOCRadar IOC Enrichment (indicator_details)" },
         "riskScoreThreshold": { "type": "int", "value": "[parameters('RiskScoreThreshold')]" },
-        "note": { "type": "string", "value": "After deployment, create a Microsoft Sentinel automation rule to run this playbook on incident creation (portal step). Handles 200 (enrich), 202 (pending), 404/4xx (skip) gracefully." }
+        "note": { "type": "string", "value": "After deployment, create a Microsoft Sentinel automation rule to run this playbook on incident creation (portal step). For SOCRadar-Alarm-Import incidents, set CompanyId so the playbook fetches the alarm's related entities from SOCRadar. Handles 200 (enrich), 202 (pending), 404/4xx (skip) gracefully." }
     }
 }
