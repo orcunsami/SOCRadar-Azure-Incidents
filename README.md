@@ -47,9 +47,9 @@ Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own:
 
 Notes:
 
-- Uses a dedicated **IOC Enrichment API key** (Standard Licensed APIs entitlement — contact integration@socradar.io).
-- `RiskScoreThreshold` (default `0`) — only comments when the score is at or above this value.
-- After deployment, create a Microsoft Sentinel **automation rule** (when an incident is created → run this playbook) in the portal.
+- Uses a dedicated **IOC Enrichment API key** (Standard Licensed APIs entitlement -- contact integration@socradar.io).
+- `RiskScoreThreshold` (default `0`) -- only comments when the score is at or above this value.
+- After deployment, create a Microsoft Sentinel **automation rule** (when an incident is created -> run this playbook) in the portal.
 - Microsoft Sentinel **Responder** role is sufficient.
 
 ## Prerequisites
@@ -74,18 +74,18 @@ Notes:
 |-----------|---------|-------------|
 | `WorkspaceResourceGroup` | deployment RG | Set if workspace is in a different RG |
 | `SentinelRoleLevel` | `Responder` | `Responder` (least-privilege) or `Contributor` |
-| `PollingIntervalMinutes` | `5` | How often to check for alarms (1–60) |
+| `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60) |
 | `InitialLookbackMinutes` | `600` | First-run lookback window (10 hours) |
 | `ImportAllStatuses` | `false` | `true` imports RESOLVED / FALSE_POSITIVE / MITIGATED too |
 | `EnableAuditLogging` | `true` | Writes audit events to `SOCRadarAuditLog_CL` |
 | `EnableAlarmsTable` | `true` | Stores full alarm JSON in `SOCRadar_Alarms_CL` |
 | `EnableWorkbook` | `true` | Deploys the SOCRadar Dashboard workbook |
-| `TableRetentionDays` | `365` | Retention for custom tables (30–730) |
+| `TableRetentionDays` | `365` | Retention for custom tables (30-730) |
 
 ## What Gets Deployed
 
-- **SOCRadar-Alarm-Import** Logic App — imports alarms as incidents
-- **SOCRadar-Alarm-Sync** Logic App — syncs closed incidents back
+- **SOCRadar-Alarm-Import** Logic App -- imports alarms as incidents
+- **SOCRadar-Alarm-Sync** Logic App -- syncs closed incidents back
 - **SOCRadar_Alarms_CL** custom table (optional)
 - **SOCRadarAuditLog_CL** audit table (optional)
 - **SOCRadar Dashboard** workbook (optional)
@@ -95,13 +95,13 @@ Notes:
 
 Logic Apps run with Managed Identity:
 
-- **Responder** (default) — enough for create / update / close / classify.
-- **Contributor** — only if you rely on automation rules that need elevated access.
+- **Responder** (default) -- enough for create / update / close / classify.
+- **Contributor** -- only if you rely on automation rules that need elevated access.
 
 ## Cross-Region / Cross-RG
 
-- Different region → set `WorkspaceLocation`.
-- Different resource group → set `WorkspaceResourceGroup`. Custom tables and workbook deploy into the workspace RG.
+- Different region -> set `WorkspaceLocation`.
+- Different resource group -> set `WorkspaceResourceGroup`. Custom tables and workbook deploy into the workspace RG.
 
 ## Post-Deployment
 
@@ -111,7 +111,7 @@ Logic Apps start 3 minutes after deployment, so role assignments have time to pr
 
 This repository is the standalone one-click deployment. It provisions the infrastructure (Data Collection Endpoint, Data Collection Rules, and custom tables) as separate resources alongside the Logic Apps.
 
-The same integration is also available as a Microsoft Sentinel Solution via **Content Hub → SOCRadar**. In that distribution, the infrastructure is provisioned inside the Alarm Import playbook template so it shows up under **Automation → Playbook templates**. Both paths end up with the same workspace state; choose whichever fits your installation workflow.
+The same integration is also available as a Microsoft Sentinel Solution via **Content Hub -> SOCRadar**. In that distribution, the infrastructure is provisioned inside the Alarm Import playbook template so it shows up under **Automation -> Playbook templates**. Both paths end up with the same workspace state; choose whichever fits your installation workflow.
 
 ## Support
 

@@ -1,0 +1,93 @@
+name: Template checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every ARM template parses as JSON
+        run: |
+          set -e
+          count=0
+          for f in azuredeploy.json Playbooks/*/azuredeploy.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
+            echo "  ok: $f"
+            count=$((count + 1))
+          done
+          echo "checked $count template(s)"
+          # Guard against a silent pass when the glob matches nothing.
+          if [ "$count" -lt 7 ]; then
+            echo "expected at least 7 templates, found $count"
+            exit 1
+          fi
+
+      - name: Every Analytic Rule parses as YAML
+        run: |
+          set -e
+          pip install --quiet pyyaml
+          count=0
+          for f in "Analytic Rules"/*.yaml; do
+            python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$f"
+            echo "  ok: $f"
+            count=$((count + 1))
+          done
+          echo "checked $count analytic rule(s)"
+          # Guard against a silent pass when the glob matches nothing.
+          if [ "$count" -lt 3 ]; then
+            echo "expected at least 3 analytic rules, found $count"
+            exit 1
+          fi
+
+      - name: Standalone templates match the one-click template
+        run: python3 tools/check_template_drift.py
+
+      - name: No secrets in tracked files
+        run: |
+          set -e
+          # Calibrate first: a scan that cannot see a planted probe proves nothing.
+          # The probe strings are assembled at run time so this file does not trip its own scan.
+          printf 'api_key = "sk-%s"\nAKIA%s\n' "CALIBRATION0123456789012" "0000CALIBRATION1" > .calibration-probe
+          if ! grep -rIE 'sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}' . --exclude-dir=.git >/dev/null; then
+            echo "scan is blind - it cannot see the calibration probe"
+            rm -f .calibration-probe
+            exit 1
+          fi
+          rm -f .calibration-probe
+          echo "  calibration ok"
+          if grep -rIE 'sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|-----BEGIN [A-Z ]*PRIVATE KEY-----' . --exclude-dir=.git; then
+            echo "secret pattern found in tracked content"
+            exit 1
+          fi
+          echo "  no secret patterns"
+
+      - name: Tracked files are ASCII only
+        run: |
+          python3 - <<'PY'
+          import subprocess, sys
+          # NUL-separated: this repo has a tracked directory with a space in its name
+          # ("Analytic Rules/"), which a plain .split() on git-ls-files output would
+          # break apart into two bogus paths.
+          out = subprocess.run(["git", "ls-files", "-z"], capture_output=True, text=True).stdout
+          files = [f for f in out.split("\x00") if f]
+          bad = []
+          for name in files:
+              try:
+                  data = open(name, "rb").read()
+              except IsADirectoryError:
+                  continue
+              count = sum(1 for byte in data if byte > 127)
+              if count:
+                  bad.append((name, count))
+          if bad:
+              for name, count in bad:
+                  print(f"  {name}: {count} non-ascii byte(s)")
+              sys.exit(1)
+          print(f"  {len(files)} tracked file(s), all ascii")
+          PY
