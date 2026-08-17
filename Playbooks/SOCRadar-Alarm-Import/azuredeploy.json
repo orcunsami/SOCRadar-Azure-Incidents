@@ -277,7 +277,7 @@
                                     "type": "exponential",
                                     "count": 4,
                                     "interval": "PT10S",
-                                    "maximumInterval": "PT1H"
+                                    "maximumInterval": "PT1M"
                                 }
                             },
                             "runAfter": {}
@@ -355,8 +355,8 @@
                             "type": "Until",
                             "expression": "@greater(variables('page'), variables('total_pages'))",
                             "limit": {
-                                "count": 1000,
-                                "timeout": "PT1H"
+                                "count": 200,
+                                "timeout": "PT10M"
                             },
                             "actions": {
                                 "Get_SOCRadar_Page": {
@@ -377,7 +377,7 @@
                                             "type": "exponential",
                                             "count": 4,
                                             "interval": "PT10S",
-                                            "maximumInterval": "PT1H"
+                                            "maximumInterval": "PT1M"
                                         }
                                     },
                                     "runtimeConfiguration": {
@@ -529,7 +529,7 @@
                             "expression": "@equals(variables('incidents_next_link'), '')",
                             "limit": {
                                 "count": 100,
-                                "timeout": "PT1H"
+                                "timeout": "PT10M"
                             },
                             "actions": {
                                 "Query_Incidents_Page": {
@@ -544,7 +544,7 @@
                                             "type": "exponential",
                                             "count": 4,
                                             "interval": "PT10S",
-                                            "maximumInterval": "PT1H"
+                                            "maximumInterval": "PT1M"
                                         }
                                     },
                                     "runAfter": {}

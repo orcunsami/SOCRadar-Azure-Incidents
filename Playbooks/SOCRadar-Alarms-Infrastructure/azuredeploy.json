@@ -111,7 +111,7 @@
                     {
                         "streams": [ "[variables('AlarmsStreamName')]" ],
                         "destinations": [ "workspace" ],
-                        "transformKql": "source",
+                        "transformKql": "source | extend AlarmPayload = pack('alarm_id', AlarmPayload['alarm_id'], 'status', AlarmPayload['status'], 'alarm_risk_level', AlarmPayload['alarm_risk_level'], 'alarm_text', AlarmPayload['alarm_text'], 'alarm_type_details', AlarmPayload['alarm_type_details'], 'alarm_asset', AlarmPayload['alarm_asset'], 'date', AlarmPayload['date'], 'tags', AlarmPayload['tags'], 'compromised_domains', AlarmPayload['content']['compromised_domains'], 'compromised_ips', AlarmPayload['content']['compromised_ips'], 'malware_family', AlarmPayload['content']['malware_family'], 'malware_path', AlarmPayload['content']['malware_path'])",
                         "outputStream": "[variables('AlarmsStreamName')]"
                     }
                 ]
