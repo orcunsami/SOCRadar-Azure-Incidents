@@ -638,7 +638,7 @@
                                     "type": "exponential",
                                     "count": 4,
                                     "interval": "PT10S",
-                                    "maximumInterval": "PT1H"
+                                    "maximumInterval": "PT1M"
                                 }
                             },
                             "runAfter": {}
@@ -716,8 +716,8 @@
                             "type": "Until",
                             "expression": "@greater(variables('page'), variables('total_pages'))",
                             "limit": {
-                                "count": 1000,
-                                "timeout": "PT1H"
+                                "count": 200,
+                                "timeout": "PT10M"
                             },
                             "actions": {
                                 "Get_SOCRadar_Page": {
@@ -738,7 +738,7 @@
                                             "type": "exponential",
                                             "count": 4,
                                             "interval": "PT10S",
-                                            "maximumInterval": "PT1H"
+                                            "maximumInterval": "PT1M"
                                         }
                                     },
                                     "runtimeConfiguration": {
@@ -890,7 +890,7 @@
                             "expression": "@equals(variables('incidents_next_link'), '')",
                             "limit": {
                                 "count": 100,
-                                "timeout": "PT1H"
+                                "timeout": "PT10M"
                             },
                             "actions": {
                                 "Query_Incidents_Page": {
@@ -905,7 +905,7 @@
                                             "type": "exponential",
                                             "count": 4,
                                             "interval": "PT10S",
-                                            "maximumInterval": "PT1H"
+                                            "maximumInterval": "PT1M"
                                         }
                                     },
                                     "runAfter": {}
@@ -2054,7 +2054,7 @@
                             "expression": "@equals(variables('closed_next_link'), '')",
                             "limit": {
                                 "count": 100,
-                                "timeout": "PT1H"
+                                "timeout": "PT10M"
                             },
                             "actions": {
                                 "Query_Closed_Page": {
@@ -2069,7 +2069,7 @@
                                             "type": "exponential",
                                             "count": 4,
                                             "interval": "PT10S",
-                                            "maximumInterval": "PT1H"
+                                            "maximumInterval": "PT1M"
                                         }
                                     },
                                     "runAfter": {}
@@ -2174,14 +2174,13 @@
                                                     "type": "exponential",
                                                     "count": 4,
                                                     "interval": "PT10S",
-                                                    "maximumInterval": "PT1H"
+                                                    "maximumInterval": "PT1M"
                                                 }
                                             },
                                             "runtimeConfiguration": {
                                                 "secureData": {
                                                     "properties": [
-                                                        "inputs",
-                                                        "outputs"
+                                                        "inputs"
                                                     ]
                                                 }
                                             },
@@ -2213,7 +2212,7 @@
                                                     "type": "exponential",
                                                     "count": 4,
                                                     "interval": "PT10S",
-                                                    "maximumInterval": "PT1H"
+                                                    "maximumInterval": "PT1M"
                                                 }
                                             },
                                             "runtimeConfiguration": {
@@ -2230,38 +2229,60 @@
                                                 ]
                                             }
                                         },
-                                        "Add_Synced_Tag": {
-                                            "type": "Http",
-                                            "inputs": {
-                                                "method": "PUT",
-                                                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents/@{items(''For_Each_Incident'')?[''name'']}?api-version=2023-11-01')]",
-                                                "authentication": {
-                                                    "type": "ManagedServiceIdentity"
-                                                },
-                                                "headers": {
-                                                    "Content-Type": "application/json"
-                                                },
-                                                "body": {
-                                                    "etag": "@{items('For_Each_Incident')?['etag']}",
-                                                    "properties": {
-                                                        "title": "@{items('For_Each_Incident')?['properties']?['title']}",
-                                                        "description": "@{items('For_Each_Incident')?['properties']?['description']}",
-                                                        "status": "@{items('For_Each_Incident')?['properties']?['status']}",
-                                                        "severity": "@{items('For_Each_Incident')?['properties']?['severity']}",
-                                                        "classification": "@{items('For_Each_Incident')?['properties']?['classification']}",
-                                                        "classificationReason": "@{items('For_Each_Incident')?['properties']?['classificationReason']}",
-                                                        "classificationComment": "@{items('For_Each_Incident')?['properties']?['classificationComment']}",
-                                                        "owner": "@items('For_Each_Incident')?['properties']?['owner']",
-                                                        "firstActivityTimeUtc": "@{items('For_Each_Incident')?['properties']?['firstActivityTimeUtc']}",
-                                                        "lastActivityTimeUtc": "@{items('For_Each_Incident')?['properties']?['lastActivityTimeUtc']}",
-                                                        "labels": "@union(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]')), json('[{\"labelName\": \"Synced\", \"labelType\": \"User\"}]'))"
+                                        "Check_SOCRadar_Write_Succeeded": {
+                                            "type": "If",
+                                            "expression": {
+                                                "or": [
+                                                    {
+                                                        "equals": [
+                                                            "@coalesce(body('Update_SOCRadar_Status')?['is_success'], false)",
+                                                            true
+                                                        ]
+                                                    },
+                                                    {
+                                                        "contains": [
+                                                            "@toLower(string(coalesce(body('Update_SOCRadar_Status')?['message'], '')))",
+                                                            "already"
+                                                        ]
                                                     }
-                                                },
-                                                "retryPolicy": {
-                                                    "type": "exponential",
-                                                    "count": 4,
-                                                    "interval": "PT10S",
-                                                    "maximumInterval": "PT1H"
+                                                ]
+                                            },
+                                            "actions": {
+                                                "Add_Synced_Tag": {
+                                                    "type": "Http",
+                                                    "inputs": {
+                                                        "method": "PUT",
+                                                        "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents/@{items(''For_Each_Incident'')?[''name'']}?api-version=2023-11-01')]",
+                                                        "authentication": {
+                                                            "type": "ManagedServiceIdentity"
+                                                        },
+                                                        "headers": {
+                                                            "Content-Type": "application/json"
+                                                        },
+                                                        "body": {
+                                                            "etag": "@{items('For_Each_Incident')?['etag']}",
+                                                            "properties": {
+                                                                "title": "@{items('For_Each_Incident')?['properties']?['title']}",
+                                                                "description": "@{items('For_Each_Incident')?['properties']?['description']}",
+                                                                "status": "@{items('For_Each_Incident')?['properties']?['status']}",
+                                                                "severity": "@{items('For_Each_Incident')?['properties']?['severity']}",
+                                                                "classification": "@{items('For_Each_Incident')?['properties']?['classification']}",
+                                                                "classificationReason": "@{items('For_Each_Incident')?['properties']?['classificationReason']}",
+                                                                "classificationComment": "@{items('For_Each_Incident')?['properties']?['classificationComment']}",
+                                                                "owner": "@items('For_Each_Incident')?['properties']?['owner']",
+                                                                "firstActivityTimeUtc": "@{items('For_Each_Incident')?['properties']?['firstActivityTimeUtc']}",
+                                                                "lastActivityTimeUtc": "@{items('For_Each_Incident')?['properties']?['lastActivityTimeUtc']}",
+                                                                "labels": "@union(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]')), json('[{\"labelName\": \"Synced\", \"labelType\": \"User\"}]'))"
+                                                            }
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 4,
+                                                            "interval": "PT10S",
+                                                            "maximumInterval": "PT1M"
+                                                        }
+                                                    },
+                                                    "runAfter": {}
                                                 }
                                             },
                                             "runAfter": {

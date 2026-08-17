@@ -103,7 +103,7 @@
                     {
                         "streams": [ "Custom-SOCRadarAuditLog_CL" ],
                         "destinations": [ "workspace" ],
-                        "transformKql": "source",
+                        "transformKql": "source | extend FullAlarmJson = pack('alarm_id', FullAlarmJson['alarm_id'], 'status', FullAlarmJson['status'], 'alarm_risk_level', FullAlarmJson['alarm_risk_level'], 'alarm_text', FullAlarmJson['alarm_text'], 'alarm_type_details', FullAlarmJson['alarm_type_details'], 'alarm_asset', FullAlarmJson['alarm_asset'], 'date', FullAlarmJson['date'], 'tags', FullAlarmJson['tags'], 'compromised_domains', FullAlarmJson['content']['compromised_domains'], 'compromised_ips', FullAlarmJson['content']['compromised_ips'], 'malware_family', FullAlarmJson['content']['malware_family'], 'malware_path', FullAlarmJson['content']['malware_path'])",
                         "outputStream": "Custom-SOCRadarAuditLog_CL"
                     }
                 ]
