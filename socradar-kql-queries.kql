@@ -67,52 +67,64 @@ SOCRadar_Alarms_CL
 // Import operations summary
 SOCRadarAuditLog_CL
 | where TimeGenerated > ago(24h)
-| where EventType == "AlarmImported"
 | summarize
-    TotalImported = count(),
-    Successful = countif(OperationStatus == "Success"),
-    Failed = countif(OperationStatus == "Failed")
+    Imported = countif(EventType == "AlarmImported"),
+    EnrichmentFailed = countif(EventType == "IoCEnrichmentFailed")
 
-// Sync operations summary
+// Incidents whose IoC entity enrichment failed
+// (these incidents exist but their Entities tab is empty)
 SOCRadarAuditLog_CL
 | where TimeGenerated > ago(24h)
-| where EventType == "AlarmSynced"
-| summarize
-    TotalSynced = count(),
-    Successful = countif(OperationStatus == "Success"),
-    Failed = countif(OperationStatus == "Failed")
+| where EventType == "IoCEnrichmentFailed"
+| project TimeGenerated, AlarmId, IncidentId, AlarmType, Message
+| order by TimeGenerated desc
 
 // Errors in last 24 hours
 SOCRadarAuditLog_CL
 | where TimeGenerated > ago(24h)
-| where OperationStatus == "Failed"
-| project TimeGenerated, EventType, AlarmId, Message
+| where EventType endswith "Failed"
+| project TimeGenerated, EventType, AlarmId, IncidentId, Message
 | order by TimeGenerated desc
 
 // -----------------------------------------
 // 4. LOGIC APP DIAGNOSTICS
 // -----------------------------------------
+//
+// PREREQUISITE: the two queries in this section read the AzureDiagnostics table, which is
+// empty unless you send Logic App runtime logs to this workspace. The deployment template
+// does NOT configure that (it would add ingestion cost). Enable it per playbook with:
+//
+//   az monitor diagnostic-settings create \
+//     --name socradar-logicapp-diagnostics \
+//     --resource <logic app resource id> \
+//     --workspace <workspace resource id> \
+//     --logs '[{"category":"WorkflowRuntime","enabled":true}]'
+//
+// Without it these two queries return "BadArgumentError" because the table does not exist.
+// Application-level failures are recorded in SOCRadarAuditLog_CL instead (section 3).
 
-// Failed Logic App runs
+// Failed Logic App actions
 AzureDiagnostics
-| where ResourceType == "WORKFLOWS"
+| where Category == "WorkflowRuntime"
 | where resource_workflowName_s contains "SOCRadar"
 | where status_s == "Failed"
 | project
     TimeGenerated,
     Workflow = resource_workflowName_s,
-    Action = action_s,
+    Action = resource_actionName_s,
     Error = error_message_s
 | order by TimeGenerated desc
 
 // Logic App run durations
 AzureDiagnostics
-| where ResourceType == "WORKFLOWS"
+| where Category == "WorkflowRuntime"
+| where OperationName == "Microsoft.Logic/workflows/workflowRunCompleted"
 | where resource_workflowName_s contains "SOCRadar"
 | where status_s == "Succeeded"
+| extend DurationSec = datetime_diff("second", endTime_t, startTime_t)
 | summarize
-    AvgDuration = avg(duration_s),
-    MaxDuration = max(duration_s),
+    AvgSeconds = round(avg(DurationSec), 1),
+    MaxSeconds = max(DurationSec),
     RunCount = count()
     by resource_workflowName_s
 
@@ -135,7 +147,7 @@ SOCRadar_Alarms_CL
     Severity,
     Title,
     AlarmDate,
-    DaysOpen = datetime_diff('day', now(), AlarmDate)
+    DaysOpen = datetime_diff('day', now(), todatetime(AlarmDate))
 | order by Severity, DaysOpen desc
 
 // Alarm trends by type (week over week)
@@ -202,12 +214,12 @@ SOCRadar_Alarms_CL
 | summarize CriticalCount = count()
 | where CriticalCount > 5
 
-// Alert: Sync failures detected
+// Alert: integration failures detected
 // Schedule: Every 1 hour, lookback 1 hour
 SOCRadarAuditLog_CL
 | where TimeGenerated > ago(1h)
-| where OperationStatus == "Failed"
-| summarize FailureCount = count()
+| where EventType endswith "Failed"
+| summarize FailureCount = count() by EventType
 | where FailureCount > 0
 
 // Alert: No alarms imported (health check)
