@@ -48,6 +48,9 @@ jobs:
       - name: Standalone templates match the one-click template
         run: python3 tools/check_template_drift.py
 
+      - name: Analytic rules match the shipped schema and ATT&CK mapping
+        run: python3 tools/check_analytic_rules.py
+
       - name: No secrets in tracked files
         run: |
           set -e
