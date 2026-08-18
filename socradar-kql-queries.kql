@@ -100,8 +100,23 @@ SOCRadarAuditLog_CL
 //     --workspace <workspace resource id> \
 //     --logs '[{"category":"WorkflowRuntime","enabled":true}]'
 //
-// Without it these two queries return "BadArgumentError" because the table does not exist.
+// Without it these two queries return no rows: AzureDiagnostics stays empty because
+// nothing routes Logic App telemetry into it. The setting does not backfill either:
+// runs that happened before it existed are never captured, so enabling it after an
+// incident will not explain that incident. In our test the first rows appeared about
+// five minutes after the run, so an empty result immediately after enabling the
+// setting means "not yet", not "misconfigured".
 // Application-level failures are recorded in SOCRadarAuditLog_CL instead (section 3).
+//
+// Verified live on 18 Aug 2026 with a throwaway workflow, so the name filter below was
+// pointed at it rather than at SOCRadar. Everything else ran unchanged: the columns
+// resolve and the failing action carries the useful text.
+//   workflowActionCompleted   Action = Will_Fail   Error = "The provided host name
+//                             'does-not-exist.invalid' could not be resolved."
+//   workflowRunCompleted      Action = empty       Error = "An action failed. No
+//                             dependent actions succeeded."
+// The run-level row summarises and names no action, so filter on Action when you want
+// the cause rather than the summary.
 
 // Failed Logic App actions
 AzureDiagnostics
