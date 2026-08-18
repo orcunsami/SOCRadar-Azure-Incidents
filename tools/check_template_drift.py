@@ -108,6 +108,55 @@ def transforms(template):
     return out
 
 
+def until_loops(template):
+    """Yield (workflow_action_path, until_body) for every Until loop in a template."""
+    for resource in template.get("resources", []):
+        if resource.get("type") != "Microsoft.Logic/workflows":
+            continue
+        for path, body in walk_actions(resource["properties"]["definition"]["actions"]).items():
+            if body.get("type") == "Until":
+                yield path, body
+
+
+def stalled_progress(until_body):
+    """Names of loop actions that a single failed Foreach item would leave Skipped.
+
+    A Foreach reports Failed when any one of its items fails, which is normal when
+    the items are independent records. An action that advances the loop must not
+    hang off that status, or the loop repeats the same work until it times out.
+    See EXP-AZURE-0136 and EXP-AZURE-0156.
+    """
+    inner = until_body.get("actions", {})
+    foreaches = {name for name, body in inner.items() if body.get("type") == "Foreach"}
+    stalled = []
+    for name, body in inner.items():
+        if body.get("type") not in ("IncrementVariable", "SetVariable"):
+            continue
+        for dependency, statuses in (body.get("runAfter") or {}).items():
+            if dependency in foreaches and "Failed" not in statuses:
+                stalled.append(f"{name} waits for {dependency} {statuses}")
+    return stalled
+
+
+def unbounded_result_payloads(template):
+    """Request bodies that embed result(), which carries every action's inputs+outputs.
+
+    Measured live: one such body reached 1.2 MB and Azure Monitor rejected it with
+    RequestEntityTooLarge on 197 of 250 repetitions. See EXP-AZURE-0156.
+    """
+    offenders = []
+    for resource in template.get("resources", []):
+        if resource.get("type") != "Microsoft.Logic/workflows":
+            continue
+        for path, body in walk_actions(resource["properties"]["definition"]["actions"]).items():
+            if body.get("type") != "Http":
+                continue
+            payload = json.dumps((body.get("inputs") or {}).get("body"))
+            if "result(" in payload:
+                offenders.append(path)
+    return offenders
+
+
 def main():
     root = load(ROOT)
     root_import = workflow_actions(root, want_sync=False)
@@ -164,6 +213,17 @@ def main():
         raw = open(path).read()
         if '"PT1H"' in raw:
             failures.append(f"{os.path.relpath(path, REPO)}: still contains a PT1H retry or loop timeout")
+
+    # A loop must keep advancing even when one record in it fails, and no request
+    # body may ship result(). Both classes broke the import live on 2026-08-18.
+    for path in ALL_TEMPLATES:
+        template = load(path)
+        rel = os.path.relpath(path, REPO)
+        for loop_path, loop in until_loops(template):
+            for stall in stalled_progress(loop):
+                failures.append(f"{rel}: {loop_path} cannot advance past a failed record ({stall})")
+        for offender in unbounded_result_payloads(template):
+            failures.append(f"{rel}: {offender} puts result() in a request body")
 
     if failures:
         print("TEMPLATE DRIFT DETECTED\n")
