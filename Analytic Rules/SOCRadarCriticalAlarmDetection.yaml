@@ -13,16 +13,16 @@ queryPeriod: 15m
 triggerOperator: gt
 triggerThreshold: 0
 tactics:
+  - Reconnaissance
   - InitialAccess
-  - CredentialAccess
 relevantTechniques:
   - T1589
   - T1078
 query: |
     SOCRadar_Alarms_CL
-    | where Severity in ("High", "Critical")
+    | where Severity in ("HIGH", "CRITICAL")
     | where Status == "OPEN"
-    | extend AlarmUrl = strcat("https://platform.socradar.com/company/", CompanyId_s, "/alarms/", AlarmId)
+    | extend AlarmUrl = strcat("https://platform.socradar.com/company/", CompanyId, "/alarm/", AlarmId)
     | extend AccountName = tostring(AlarmId)
     | project TimeGenerated, AlarmId, Title, AlarmMainType, AlarmSubType, Severity, Status, AlarmUrl, AccountName
 entityMappings:
