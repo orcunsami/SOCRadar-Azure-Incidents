@@ -47,10 +47,18 @@ Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own:
 
 Notes:
 
-- Uses a dedicated **IOC Enrichment API key** (Standard Licensed APIs entitlement -- contact integration@socradar.io).
-- `RiskScoreThreshold` (default `0`) -- only comments when the score is at or above this value.
+- The API key must have the **IOC Enrichment** entitlement (Standard Licensed APIs -- contact integration@socradar.io). A company key without it returns HTTP 402 and nothing is enriched; the playbook then posts a single summary comment saying so.
+- `MaxIndicators` (default `20`) caps how many indicators one incident enriches. Each enrichment spends one SOCRadar API credit, and an alarm incident can carry 100 entities, so raise it only if your credit budget allows.
+- `RiskScoreThreshold` (default `0`) -- only comments when the score is at or above this value. Benign whitelisted indicators scoring 0 are skipped.
+- Indicators that are still being looked up (HTTP 202) or that failed are collected into one summary comment instead of one comment each.
+- Microsoft Sentinel needs permission on this resource group before it can run the playbook. Either pass `SentinelServicePrincipalObjectId` at deploy time, or afterwards open **Microsoft Sentinel > Settings > Playbook permissions > Configure permissions** and add this resource group. Without it, running the playbook fails with `Missing required permissions for Microsoft Sentinel on the playbook resource`.
+
+  ```bash
+  az ad sp list --filter "appId eq '98785600-1bb7-4fb9-b9fa-19afe2c8a360'" --query "[0].id" -o tsv
+  ```
+
 - After deployment, create a Microsoft Sentinel **automation rule** (when an incident is created -> run this playbook) in the portal.
-- Microsoft Sentinel **Responder** role is sufficient.
+- Microsoft Sentinel **Responder** role is sufficient for the playbook itself.
 
 ## Prerequisites
 

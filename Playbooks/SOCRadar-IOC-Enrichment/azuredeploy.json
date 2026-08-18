@@ -39,6 +39,18 @@
             "maxValue": 100,
             "metadata": { "description": "Only post an enrichment comment when the SOCRadar risk score is greater than or equal to this value. Default 0 = comment on every indicator that has signal (benign whitelisted indicators with score 0 are skipped to reduce noise)." }
         },
+        "MaxIndicators": {
+            "type": "int",
+            "defaultValue": 20,
+            "minValue": 1,
+            "maxValue": 100,
+            "metadata": { "description": "Maximum indicators enriched per incident. Each enrichment consumes one SOCRadar API credit." }
+        },
+        "SentinelServicePrincipalObjectId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": { "description": "Object ID of the Azure Security Insights service principal. Microsoft Sentinel needs Automation Contributor on this resource group to run the playbook. Leave empty to grant it later from Microsoft Sentinel > Settings > Playbook permissions." }
+        },
         "SentinelRoleLevel": {
             "type": "string",
             "defaultValue": "Responder",
@@ -50,6 +62,7 @@
         "SentinelConnectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
         "SentinelContributorRoleId": "ab8e14d6-4a74-4a29-9ba8-549422addade",
         "SentinelResponderRoleId": "3e150937-b8fe-4cfb-8069-0eaf05ecd056",
+        "SentinelAutomationContributorRoleId": "f4c81013-99ee-4d62-a7ee-b3f1f648599a",
         "sentinelRoleDefinitionId": "[if(equals(parameters('SentinelRoleLevel'), 'Responder'), variables('SentinelResponderRoleId'), variables('SentinelContributorRoleId'))]",
         "workspaceResourceId": "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
         "isExternalWorkspace": "[not(equals(parameters('WorkspaceResourceGroup'), resourceGroup().name))]"
@@ -87,7 +100,8 @@
                         "$connections": { "defaultValue": {}, "type": "Object" },
                         "SocradarApiKey": { "type": "SecureString" },
                         "CompanyId": { "type": "String" },
-                        "RiskScoreThreshold": { "type": "Int" }
+                        "RiskScoreThreshold": { "type": "Int" },
+                        "MaxIndicators": { "type": "Int" }
                     },
                     "triggers": {
                         "Microsoft_Sentinel_incident": {
@@ -102,10 +116,20 @@
                         }
                     },
                     "actions": {
+                        "Init_Pending": {
+                            "type": "InitializeVariable",
+                            "inputs": { "variables": [{ "name": "PendingIndicators", "type": "array", "value": [] }] },
+                            "runAfter": {}
+                        },
+                        "Init_Failed": {
+                            "type": "InitializeVariable",
+                            "inputs": { "variables": [{ "name": "FailedIndicators", "type": "array", "value": [] }] },
+                            "runAfter": { "Init_Pending": ["Succeeded"] }
+                        },
                         "Extract_Alarm_Id": {
                             "type": "Compose",
                             "inputs": "@if(contains(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#'), first(split(last(split(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#')), ' ')), '')",
-                            "runAfter": {}
+                            "runAfter": { "Init_Failed": ["Succeeded"] }
                         },
                         "Get_SOCRadar_Alarm_Entities": {
                             "type": "If",
@@ -149,7 +173,7 @@
                         },
                         "Build_Entity_List": {
                             "type": "Compose",
-                            "inputs": "@union(coalesce(triggerBody()?['object']?['properties']?['relatedEntities'], json('[]')), coalesce(body('Map_Alarm_Entities'), json('[]')))",
+                            "inputs": "@take(union(coalesce(triggerBody()?['object']?['properties']?['relatedEntities'], json('[]')), coalesce(body('Map_Alarm_Entities'), json('[]'))), parameters('MaxIndicators'))",
                             "runAfter": { "Get_SOCRadar_Alarm_Entities": ["Succeeded"] }
                         },
                         "For_Each_Entity": {
@@ -251,25 +275,23 @@
                                                 "Pending_202": {
                                                     "case": "202",
                                                     "actions": {
-                                                        "Add_Pending_Comment": {
-                                                            "type": "ApiConnection",
-                                                            "inputs": {
-                                                                "host": {
-                                                                    "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
-                                                                },
-                                                                "method": "post",
-                                                                "path": "/Incidents/Comment",
-                                                                "body": {
-                                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                                    "message": "<h3>SOCRadar IOC Enrichment</h3><b>Indicator:</b> @{replace(replace(replace(outputs('Get_Indicator_Value'), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')}<br>This indicator is being enriched by SOCRadar (first lookup). Re-run this playbook in a few minutes to get the full enrichment.<br><i>Powered by SOCRadar IOC Enrichment</i>"
-                                                                }
-                                                            },
+                                                        "Collect_Pending": {
+                                                            "type": "AppendToArrayVariable",
+                                                            "inputs": { "name": "PendingIndicators", "value": "@outputs('Get_Indicator_Value')" },
                                                             "runAfter": {}
                                                         }
                                                     }
                                                 }
                                             },
-                                            "default": { "actions": {} }
+                                            "default": {
+                                                "actions": {
+                                                    "Collect_Failed": {
+                                                        "type": "AppendToArrayVariable",
+                                                        "inputs": { "name": "FailedIndicators", "value": "@concat(outputs('Get_Indicator_Value'), ' (HTTP ', string(coalesce(outputs('Enrich_IOC')?['statusCode'], 0)), ')')" },
+                                                        "runAfter": {}
+                                                    }
+                                                }
+                                            }
                                         }
                                     },
                                     "else": { "actions": {} },
@@ -277,6 +299,33 @@
                                 }
                             },
                             "runAfter": { "Build_Entity_List": ["Succeeded"] }
+                        },
+                        "Check_Followups": {
+                            "type": "If",
+                            "expression": {
+                                "or": [
+                                    { "greater": ["@length(variables('PendingIndicators'))", 0] },
+                                    { "greater": ["@length(variables('FailedIndicators'))", 0] }
+                                ]
+                            },
+                            "actions": {
+                                "Add_Summary_Comment": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                        },
+                                        "method": "post",
+                                        "path": "/Incidents/Comment",
+                                        "body": {
+                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                            "message": "<h3>SOCRadar IOC Enrichment - summary</h3><b>Indicators submitted:</b> @{length(outputs('Build_Entity_List'))}<br><b>Awaiting first lookup:</b> @{length(variables('PendingIndicators'))}@{if(greater(length(variables('PendingIndicators')), 0), concat(' - ', join(variables('PendingIndicators'), ', ')), '')}<br><b>Not enriched:</b> @{length(variables('FailedIndicators'))}@{if(greater(length(variables('FailedIndicators')), 0), concat(' - ', join(variables('FailedIndicators'), ', ')), '')}<br>Re-run this playbook later to enrich the pending indicators.<br><i>Powered by SOCRadar IOC Enrichment</i>"
+                                        }
+                                    },
+                                    "runAfter": {}
+                                }
+                            },
+                            "runAfter": { "For_Each_Entity": ["Succeeded", "Failed"] }
                         }
                     }
                 },
@@ -293,8 +342,23 @@
                     },
                     "SocradarApiKey": { "value": "[parameters('SocradarApiKey')]" },
                     "CompanyId": { "value": "[parameters('CompanyId')]" },
-                    "RiskScoreThreshold": { "value": "[parameters('RiskScoreThreshold')]" }
+                    "RiskScoreThreshold": { "value": "[parameters('RiskScoreThreshold')]" },
+                    "MaxIndicators": { "value": "[parameters('MaxIndicators')]" }
                 }
+            }
+        },
+        {
+            "condition": "[not(empty(parameters('SentinelServicePrincipalObjectId')))]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid(resourceGroup().id, parameters('PlaybookName'), variables('SentinelAutomationContributorRoleId'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('SentinelAutomationContributorRoleId'))]",
+                "principalId": "[parameters('SentinelServicePrincipalObjectId')]",
+                "principalType": "ServicePrincipal"
             }
         },
         {
