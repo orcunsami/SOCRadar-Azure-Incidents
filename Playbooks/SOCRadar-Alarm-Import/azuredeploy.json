@@ -479,7 +479,7 @@
                             "expression": "@greater(variables('page'), variables('total_pages'))",
                             "limit": {
                                 "count": 200,
-                                "timeout": "PT10M"
+                                "timeout": "PT30M"
                             },
                             "actions": {
                                 "Get_SOCRadar_Page": {
