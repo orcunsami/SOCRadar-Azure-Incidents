@@ -1291,7 +1291,7 @@
                             "actions": {
                                 "For_Each_Missing_Entity": {
                                     "type": "Foreach",
-                                    "foreach": "@take(body('Filter_Incidents_Missing_Entities'), 60)",
+                                    "foreach": "@if(equals(parameters('EnableIoCEnrichment'), true), take(body('Filter_Incidents_Missing_Entities'), 60), json('[]'))",
                                     "runtimeConfiguration": {
                                         "concurrency": {
                                             "repetitions": 5
