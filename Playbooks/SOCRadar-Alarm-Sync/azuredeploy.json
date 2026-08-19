@@ -253,7 +253,7 @@
                             "actions": {
                                 "Extract_Alarm_ID": {
                                     "type": "Compose",
-                                    "inputs": "@split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0]",
+                                    "inputs": "@if(contains(coalesce(items('For_Each_Incident')?['properties']?['title'], ''), '#'), split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0], '')",
                                     "runAfter": {}
                                 },
                                 "Check_Has_Synced_Tag": {
@@ -280,6 +280,14 @@
                                                     "@outputs('Check_Has_Synced_Tag')",
                                                     false
                                                 ]
+                                            },
+                                            {
+                                                "not": {
+                                                    "equals": [
+                                                        "@outputs('Extract_Alarm_ID')",
+                                                        ""
+                                                    ]
+                                                }
                                             }
                                         ]
                                     },

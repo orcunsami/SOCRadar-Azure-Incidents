@@ -18,7 +18,7 @@ python3 check_alarm_severity.py --days 30
 Writes a JSON report next to the script. That report is gitignored
 (`tests/*.json`) because it can contain live alarm data.
 
-### 2026-08-19 finding (preprod company 132, last 30 days, 803 alarms)
+### 2026-08-19 finding (preprod tenant, last 30 days, 803 alarms)
 
 - severity: MEDIUM 98.8%, CRITICAL 0.7%, HIGH 0.2%, LOW 0.2%. HIGH/CRITICAL
   exist, just rare - the analytic rule was never proven firing because our
