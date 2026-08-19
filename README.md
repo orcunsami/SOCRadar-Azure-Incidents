@@ -47,7 +47,7 @@ Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own:
 
 Notes:
 
-- The API key must have the **IOC Enrichment** entitlement (Standard Licensed APIs -- contact integration@socradar.io). A company key without it returns HTTP 402 and nothing is enriched; the playbook then posts a single summary comment saying so.
+- `SocradarApiKey` is your normal company key (same one used by Import/Sync), used here to fetch the original alarm's related entities. IOC enrichment itself needs a **separate** key with the **IOC Enrichment** entitlement (Standard Licensed APIs / advanced tier -- contact integration@socradar.io). Set `SocradarIocApiKey` to that key; leave it empty to reuse `SocradarApiKey` for enrichment too. If the key used for enrichment lacks the entitlement, calls return HTTP 402 and nothing is enriched; the playbook then posts a single summary comment saying so.
 - `MaxIndicators` (default `20`) caps how many indicators one incident enriches. Each enrichment spends one SOCRadar API credit, and an alarm incident can carry 100 entities, so raise it only if your credit budget allows.
 - `RiskScoreThreshold` (default `0`) -- only comments when the score is at or above this value. Benign whitelisted indicators scoring 0 are skipped.
 - Indicators that are still being looked up (HTTP 202) or that failed are collected into one summary comment instead of one comment each.
