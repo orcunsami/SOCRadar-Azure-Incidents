@@ -100,8 +100,12 @@ SOCRadarAuditLog_CL
 //     --workspace <workspace resource id> \
 //     --logs '[{"category":"WorkflowRuntime","enabled":true}]'
 //
-// Without it these two queries return no rows: AzureDiagnostics stays empty because
-// nothing routes Logic App telemetry into it. The setting does not backfill either:
+// Without it the table itself still resolves, it just stays empty, so these queries return
+// no rows. What does NOT exist yet are the Logic App columns (resource_workflowName_s,
+// status_s, ...): they are created by the first log rows, and referencing one directly before
+// that fails the whole query with BadArgumentError / SEM0100 "Failed to resolve scalar
+// expression". That is why both queries read those columns through column_ifexists.
+// The setting does not backfill either:
 // runs that happened before it existed are never captured, so enabling it after an
 // incident will not explain that incident. In our test the first rows appeared about
 // five minutes after the run, so an empty result immediately after enabling the
@@ -121,27 +125,33 @@ SOCRadarAuditLog_CL
 // Failed Logic App actions
 AzureDiagnostics
 | where Category == "WorkflowRuntime"
-| where resource_workflowName_s contains "SOCRadar"
-| where status_s == "Failed"
-| project
-    TimeGenerated,
-    Workflow = resource_workflowName_s,
-    Action = resource_actionName_s,
-    Error = error_message_s
+| extend
+    Workflow = column_ifexists("resource_workflowName_s", ""),
+    RunStatus = column_ifexists("status_s", ""),
+    Action = column_ifexists("resource_actionName_s", ""),
+    Error = column_ifexists("error_message_s", "")
+| where Workflow contains "SOCRadar"
+| where RunStatus == "Failed"
+| project TimeGenerated, Workflow, Action, Error
 | order by TimeGenerated desc
 
 // Logic App run durations
 AzureDiagnostics
 | where Category == "WorkflowRuntime"
 | where OperationName == "Microsoft.Logic/workflows/workflowRunCompleted"
-| where resource_workflowName_s contains "SOCRadar"
-| where status_s == "Succeeded"
-| extend DurationSec = datetime_diff("second", endTime_t, startTime_t)
+| extend
+    Workflow = column_ifexists("resource_workflowName_s", ""),
+    RunStatus = column_ifexists("status_s", ""),
+    RunStart = column_ifexists("startTime_t", datetime(null)),
+    RunEnd = column_ifexists("endTime_t", datetime(null))
+| where Workflow contains "SOCRadar"
+| where RunStatus == "Succeeded"
+| extend DurationSec = datetime_diff("second", RunEnd, RunStart)
 | summarize
     AvgSeconds = round(avg(DurationSec), 1),
     MaxSeconds = max(DurationSec),
     RunCount = count()
-    by resource_workflowName_s
+    by Workflow
 
 // -----------------------------------------
 // 5. SECURITY ANALYSIS
