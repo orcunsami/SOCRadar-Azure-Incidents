@@ -280,6 +280,14 @@
                                                     "@outputs('Check_Has_Synced_Tag')",
                                                     false
                                                 ]
+                                            },
+                                            {
+                                                "not": {
+                                                    "equals": [
+                                                        "@outputs('Extract_Alarm_ID')",
+                                                        ""
+                                                    ]
+                                                }
                                             }
                                         ]
                                     },
