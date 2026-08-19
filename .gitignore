@@ -1,2 +1,5 @@
 HANDOFF-AUTO.md
 __pycache__/
+.env
+*.env
+tests/*.json
