@@ -23,8 +23,8 @@ jobs:
           done
           echo "checked $count template(s)"
           # Guard against a silent pass when the glob matches nothing.
-          if [ "$count" -lt 6 ]; then
-            echo "expected at least 6 templates, found $count"
+          if [ "$count" -lt 7 ]; then
+            echo "expected at least 7 templates, found $count"
             exit 1
           fi
 
