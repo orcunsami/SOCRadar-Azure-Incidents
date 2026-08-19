@@ -21,8 +21,8 @@ Writes a JSON report next to the script. That report is gitignored
 ### 2026-08-19 finding (preprod company 132, last 30 days, 803 alarms)
 
 - severity: MEDIUM 98.8%, CRITICAL 0.7%, HIGH 0.2%, LOW 0.2%. HIGH/CRITICAL
-  exist, just rare — the analytic rule was never proven firing because our
+  exist, just rare - the analytic rule was never proven firing because our
   test window (408 alarms) happened to contain none.
 - size: average alarm 251 KB, largest 1264 KB. A single 100-alarm API page is
   8.7-34.2 MB. This is independent of the K4 fix (raw accumulation across
-  pages) — it is the size of one page, one HTTP action call.
+  pages) - it is the size of one page, one HTTP action call.
