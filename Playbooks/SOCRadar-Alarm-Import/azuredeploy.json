@@ -479,7 +479,7 @@
                             "expression": "@greater(variables('page'), variables('total_pages'))",
                             "limit": {
                                 "count": 200,
-                                "timeout": "PT10M"
+                                "timeout": "PT30M"
                             },
                             "actions": {
                                 "Get_SOCRadar_Page": {
@@ -573,14 +573,33 @@
                                         ]
                                     }
                                 },
-                                "Increment_Pages_Read": {
-                                    "type": "IncrementVariable",
-                                    "inputs": {
-                                        "name": "pages_read",
-                                        "value": 1
+                                "Check_Page_Succeeded": {
+                                    "type": "If",
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "equals": [
+                                                    "@coalesce(body('Parse_Page_Response')?['is_success'], true)",
+                                                    true
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "actions": {
+                                        "Increment_Pages_Read": {
+                                            "type": "IncrementVariable",
+                                            "inputs": {
+                                                "name": "pages_read",
+                                                "value": 1
+                                            },
+                                            "runAfter": {}
+                                        }
+                                    },
+                                    "else": {
+                                        "actions": {}
                                     },
                                     "runAfter": {
-                                        "Set_Total_Pages": [
+                                        "For_Each_Alarm": [
                                             "Succeeded"
                                         ]
                                     }
@@ -1249,7 +1268,7 @@
                                         }
                                     },
                                     "runAfter": {
-                                        "Increment_Pages_Read": [
+                                        "Set_Total_Pages": [
                                             "Succeeded"
                                         ]
                                     }
