@@ -12,50 +12,78 @@
         "PlaybookName": {
             "type": "string",
             "defaultValue": "SOCRadar-IOC-Enrichment",
-            "metadata": { "description": "Name of the Logic App" }
+            "metadata": {
+                "description": "Name of the Logic App"
+            }
         },
         "SocradarApiKey": {
             "type": "securestring",
-            "metadata": { "description": "SOCRadar IOC Enrichment API Key (Standard Licensed APIs entitlement required)" }
+            "metadata": {
+                "description": "SOCRadar API Key (same key used by SOCRadar-Alarm-Import / SOCRadar-Alarm-Sync). Used here to fetch the original alarm's related entities. Also used for IOC enrichment if SocradarIocApiKey is left empty."
+            }
+        },
+        "SocradarIocApiKey": {
+            "type": "securestring",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Optional. Separate SOCRadar IOC Enrichment API key (Standard Licensed APIs / advanced tier). Leave empty to use SocradarApiKey for enrichment calls too."
+            }
         },
         "CompanyId": {
             "type": "string",
             "defaultValue": "",
-            "metadata": { "description": "SOCRadar Company ID. Used to fetch the original alarm's related entities from SOCRadar for incidents created by SOCRadar-Alarm-Import (which carry no Sentinel entities). Leave empty to enrich only Sentinel-provided entities." }
+            "metadata": {
+                "description": "SOCRadar Company ID. Used to fetch the original alarm's related entities from SOCRadar for incidents created by SOCRadar-Alarm-Import (which carry no Sentinel entities). Leave empty to enrich only Sentinel-provided entities."
+            }
         },
         "WorkspaceName": {
             "type": "string",
-            "metadata": { "description": "Microsoft Sentinel Log Analytics Workspace Name" }
+            "metadata": {
+                "description": "Microsoft Sentinel Log Analytics Workspace Name"
+            }
         },
         "WorkspaceResourceGroup": {
             "type": "string",
             "defaultValue": "[resourceGroup().name]",
-            "metadata": { "description": "Resource group of existing Microsoft Sentinel workspace. Leave default if workspace is in same resource group." }
+            "metadata": {
+                "description": "Resource group of existing Microsoft Sentinel workspace. Leave default if workspace is in same resource group."
+            }
         },
         "RiskScoreThreshold": {
             "type": "int",
             "defaultValue": 0,
             "minValue": 0,
             "maxValue": 100,
-            "metadata": { "description": "Only post an enrichment comment when the SOCRadar risk score is greater than or equal to this value. Default 0 = comment on every indicator that has signal (benign whitelisted indicators with score 0 are skipped to reduce noise)." }
+            "metadata": {
+                "description": "Only post an enrichment comment when the SOCRadar risk score is greater than or equal to this value. Default 0 = comment on every indicator that has signal (benign whitelisted indicators with score 0 are skipped to reduce noise)."
+            }
         },
         "MaxIndicators": {
             "type": "int",
             "defaultValue": 20,
             "minValue": 1,
             "maxValue": 100,
-            "metadata": { "description": "Maximum indicators enriched per incident. Each enrichment consumes one SOCRadar API credit." }
+            "metadata": {
+                "description": "Maximum indicators enriched per incident. Each enrichment consumes one SOCRadar API credit."
+            }
         },
         "SentinelServicePrincipalObjectId": {
             "type": "string",
             "defaultValue": "",
-            "metadata": { "description": "Object ID of the Azure Security Insights service principal. Microsoft Sentinel needs Automation Contributor on this resource group to run the playbook. Leave empty to grant it later from Microsoft Sentinel > Settings > Playbook permissions." }
+            "metadata": {
+                "description": "Object ID of the Azure Security Insights service principal. Microsoft Sentinel needs Automation Contributor on this resource group to run the playbook. Leave empty to grant it later from Microsoft Sentinel > Settings > Playbook permissions."
+            }
         },
         "SentinelRoleLevel": {
             "type": "string",
             "defaultValue": "Responder",
-            "allowedValues": ["Contributor", "Responder"],
-            "metadata": { "description": "Microsoft Sentinel role for the Logic App. Responder is sufficient for reading incidents and adding comments (least-privilege)." }
+            "allowedValues": [
+                "Contributor",
+                "Responder"
+            ],
+            "metadata": {
+                "description": "Microsoft Sentinel role for the Logic App. Responder is sufficient for reading incidents and adding comments (least-privilege)."
+            }
         }
     },
     "variables": {
@@ -87,7 +115,9 @@
             "apiVersion": "2019-05-01",
             "name": "[parameters('PlaybookName')]",
             "location": "[resourceGroup().location]",
-            "identity": { "type": "SystemAssigned" },
+            "identity": {
+                "type": "SystemAssigned"
+            },
             "dependsOn": [
                 "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]"
             ],
@@ -97,20 +127,38 @@
                     "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
                     "contentVersion": "1.0.0.0",
                     "parameters": {
-                        "$connections": { "defaultValue": {}, "type": "Object" },
-                        "SocradarApiKey": { "type": "SecureString" },
-                        "CompanyId": { "type": "String" },
-                        "RiskScoreThreshold": { "type": "Int" },
-                        "MaxIndicators": { "type": "Int" }
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "SocradarApiKey": {
+                            "type": "SecureString"
+                        },
+                        "SocradarIocApiKey": {
+                            "type": "SecureString"
+                        },
+                        "CompanyId": {
+                            "type": "String"
+                        },
+                        "RiskScoreThreshold": {
+                            "type": "Int"
+                        },
+                        "MaxIndicators": {
+                            "type": "Int"
+                        }
                     },
                     "triggers": {
                         "Microsoft_Sentinel_incident": {
                             "type": "ApiConnectionWebhook",
                             "inputs": {
                                 "host": {
-                                    "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
                                 },
-                                "body": { "callback_url": "@{listCallbackUrl()}" },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
                                 "path": "/incident-creation"
                             }
                         }
@@ -118,25 +166,63 @@
                     "actions": {
                         "Init_Pending": {
                             "type": "InitializeVariable",
-                            "inputs": { "variables": [{ "name": "PendingIndicators", "type": "array", "value": [] }] },
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "PendingIndicators",
+                                        "type": "array",
+                                        "value": []
+                                    }
+                                ]
+                            },
                             "runAfter": {}
                         },
                         "Init_Failed": {
                             "type": "InitializeVariable",
-                            "inputs": { "variables": [{ "name": "FailedIndicators", "type": "array", "value": [] }] },
-                            "runAfter": { "Init_Pending": ["Succeeded"] }
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "FailedIndicators",
+                                        "type": "array",
+                                        "value": []
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Init_Pending": [
+                                    "Succeeded"
+                                ]
+                            }
                         },
                         "Extract_Alarm_Id": {
                             "type": "Compose",
                             "inputs": "@if(contains(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#'), first(split(last(split(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#')), ' ')), '')",
-                            "runAfter": { "Init_Failed": ["Succeeded"] }
+                            "runAfter": {
+                                "Init_Failed": [
+                                    "Succeeded"
+                                ]
+                            }
                         },
                         "Get_SOCRadar_Alarm_Entities": {
                             "type": "If",
                             "expression": {
                                 "and": [
-                                    { "not": { "equals": ["@outputs('Extract_Alarm_Id')", ""] } },
-                                    { "not": { "equals": ["@parameters('CompanyId')", ""] } }
+                                    {
+                                        "not": {
+                                            "equals": [
+                                                "@outputs('Extract_Alarm_Id')",
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "not": {
+                                            "equals": [
+                                                "@parameters('CompanyId')",
+                                                ""
+                                            ]
+                                        }
+                                    }
                                 ]
                             },
                             "actions": {
@@ -145,11 +231,26 @@
                                     "inputs": {
                                         "method": "GET",
                                         "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/incidents/v4",
-                                        "queries": { "alarm_ids": "@{outputs('Extract_Alarm_Id')}" },
-                                        "headers": { "API-Key": "@{parameters('SocradarApiKey')}" },
-                                        "retryPolicy": { "type": "exponential", "count": 2, "interval": "PT10S", "maximumInterval": "PT1M" }
+                                        "queries": {
+                                            "alarm_ids": "@{outputs('Extract_Alarm_Id')}"
+                                        },
+                                        "headers": {
+                                            "API-Key": "@{parameters('SocradarApiKey')}"
+                                        },
+                                        "retryPolicy": {
+                                            "type": "exponential",
+                                            "count": 2,
+                                            "interval": "PT10S",
+                                            "maximumInterval": "PT1M"
+                                        }
                                     },
-                                    "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
+                                    "runtimeConfiguration": {
+                                        "secureData": {
+                                            "properties": [
+                                                "inputs"
+                                            ]
+                                        }
+                                    },
                                     "runAfter": {}
                                 },
                                 "Map_Alarm_Entities": {
@@ -165,21 +266,41 @@
                                             }
                                         }
                                     },
-                                    "runAfter": { "Fetch_Alarm": ["Succeeded", "Failed", "TimedOut"] }
+                                    "runAfter": {
+                                        "Fetch_Alarm": [
+                                            "Succeeded",
+                                            "Failed",
+                                            "TimedOut"
+                                        ]
+                                    }
                                 }
                             },
-                            "else": { "actions": {} },
-                            "runAfter": { "Extract_Alarm_Id": ["Succeeded"] }
+                            "else": {
+                                "actions": {}
+                            },
+                            "runAfter": {
+                                "Extract_Alarm_Id": [
+                                    "Succeeded"
+                                ]
+                            }
                         },
                         "Build_Entity_List": {
                             "type": "Compose",
                             "inputs": "@take(union(coalesce(triggerBody()?['object']?['properties']?['relatedEntities'], json('[]')), coalesce(body('Map_Alarm_Entities'), json('[]'))), parameters('MaxIndicators'))",
-                            "runAfter": { "Get_SOCRadar_Alarm_Entities": ["Succeeded"] }
+                            "runAfter": {
+                                "Get_SOCRadar_Alarm_Entities": [
+                                    "Succeeded"
+                                ]
+                            }
                         },
                         "For_Each_Entity": {
                             "type": "Foreach",
                             "foreach": "@outputs('Build_Entity_List')",
-                            "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
+                            "runtimeConfiguration": {
+                                "concurrency": {
+                                    "repetitions": 1
+                                }
+                            },
                             "actions": {
                                 "Get_Indicator_Value": {
                                     "type": "Compose",
@@ -190,7 +311,14 @@
                                     "type": "If",
                                     "expression": {
                                         "and": [
-                                            { "not": { "equals": ["@outputs('Get_Indicator_Value')", ""] } }
+                                            {
+                                                "not": {
+                                                    "equals": [
+                                                        "@outputs('Get_Indicator_Value')",
+                                                        ""
+                                                    ]
+                                                }
+                                            }
                                         ]
                                     },
                                     "actions": {
@@ -200,22 +328,41 @@
                                                 "method": "POST",
                                                 "uri": "https://platform.socradar.com/api/ioc_enrichment/get/indicator_details",
                                                 "headers": {
-                                                    "API-Key": "@{parameters('SocradarApiKey')}",
+                                                    "API-Key": "@{parameters('SocradarIocApiKey')}",
                                                     "Content-Type": "application/json"
                                                 },
                                                 "body": {
                                                     "indicator": "@{outputs('Get_Indicator_Value')}",
-                                                    "fields": ["indicator_details"]
+                                                    "fields": [
+                                                        "indicator_details"
+                                                    ]
                                                 },
-                                                "retryPolicy": { "type": "exponential", "count": 3, "interval": "PT10S", "maximumInterval": "PT2M" }
+                                                "retryPolicy": {
+                                                    "type": "exponential",
+                                                    "count": 3,
+                                                    "interval": "PT10S",
+                                                    "maximumInterval": "PT2M"
+                                                }
                                             },
-                                            "runtimeConfiguration": { "secureData": { "properties": ["inputs"] } },
+                                            "runtimeConfiguration": {
+                                                "secureData": {
+                                                    "properties": [
+                                                        "inputs"
+                                                    ]
+                                                }
+                                            },
                                             "runAfter": {}
                                         },
                                         "Handle_Response": {
                                             "type": "Switch",
                                             "expression": "@string(coalesce(outputs('Enrich_IOC')?['statusCode'], 0))",
-                                            "runAfter": { "Enrich_IOC": ["Succeeded", "Failed", "TimedOut"] },
+                                            "runAfter": {
+                                                "Enrich_IOC": [
+                                                    "Succeeded",
+                                                    "Failed",
+                                                    "TimedOut"
+                                                ]
+                                            },
                                             "cases": {
                                                 "Enriched_200": {
                                                     "case": "200",
@@ -240,11 +387,30 @@
                                                             "type": "If",
                                                             "expression": {
                                                                 "and": [
-                                                                    { "greaterOrEquals": ["@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)", "@parameters('RiskScoreThreshold')"] },
-                                                                    { "not": { "and": [
-                                                                        { "equals": ["@coalesce(body('Enrich_IOC')?['details']?['is_whitelisted'], false)", true] },
-                                                                        { "equals": ["@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)", 0] }
-                                                                    ] } }
+                                                                    {
+                                                                        "greaterOrEquals": [
+                                                                            "@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)",
+                                                                            "@parameters('RiskScoreThreshold')"
+                                                                        ]
+                                                                    },
+                                                                    {
+                                                                        "not": {
+                                                                            "and": [
+                                                                                {
+                                                                                    "equals": [
+                                                                                        "@coalesce(body('Enrich_IOC')?['details']?['is_whitelisted'], false)",
+                                                                                        true
+                                                                                    ]
+                                                                                },
+                                                                                {
+                                                                                    "equals": [
+                                                                                        "@coalesce(first(body('Enrich_IOC')?['details']?['score']), 0)",
+                                                                                        0
+                                                                                    ]
+                                                                                }
+                                                                            ]
+                                                                        }
+                                                                    }
                                                                 ]
                                                             },
                                                             "actions": {
@@ -252,7 +418,9 @@
                                                                     "type": "ApiConnection",
                                                                     "inputs": {
                                                                         "host": {
-                                                                            "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                            }
                                                                         },
                                                                         "method": "post",
                                                                         "path": "/Incidents/Comment",
@@ -264,10 +432,16 @@
                                                                     "runAfter": {}
                                                                 }
                                                             },
-                                                            "else": { "actions": {} },
+                                                            "else": {
+                                                                "actions": {}
+                                                            },
                                                             "runAfter": {
-                                                                "Select_ThreatActor_Names": ["Succeeded"],
-                                                                "Select_Malware_Names": ["Succeeded"]
+                                                                "Select_ThreatActor_Names": [
+                                                                    "Succeeded"
+                                                                ],
+                                                                "Select_Malware_Names": [
+                                                                    "Succeeded"
+                                                                ]
                                                             }
                                                         }
                                                     }
@@ -277,7 +451,10 @@
                                                     "actions": {
                                                         "Collect_Pending": {
                                                             "type": "AppendToArrayVariable",
-                                                            "inputs": { "name": "PendingIndicators", "value": "@outputs('Get_Indicator_Value')" },
+                                                            "inputs": {
+                                                                "name": "PendingIndicators",
+                                                                "value": "@outputs('Get_Indicator_Value')"
+                                                            },
                                                             "runAfter": {}
                                                         }
                                                     }
@@ -287,25 +464,48 @@
                                                 "actions": {
                                                     "Collect_Failed": {
                                                         "type": "AppendToArrayVariable",
-                                                        "inputs": { "name": "FailedIndicators", "value": "@concat(outputs('Get_Indicator_Value'), ' (HTTP ', string(coalesce(outputs('Enrich_IOC')?['statusCode'], 0)), ')')" },
+                                                        "inputs": {
+                                                            "name": "FailedIndicators",
+                                                            "value": "@concat(outputs('Get_Indicator_Value'), ' (HTTP ', string(coalesce(outputs('Enrich_IOC')?['statusCode'], 0)), ')')"
+                                                        },
                                                         "runAfter": {}
                                                     }
                                                 }
                                             }
                                         }
                                     },
-                                    "else": { "actions": {} },
-                                    "runAfter": { "Get_Indicator_Value": ["Succeeded"] }
+                                    "else": {
+                                        "actions": {}
+                                    },
+                                    "runAfter": {
+                                        "Get_Indicator_Value": [
+                                            "Succeeded"
+                                        ]
+                                    }
                                 }
                             },
-                            "runAfter": { "Build_Entity_List": ["Succeeded"] }
+                            "runAfter": {
+                                "Build_Entity_List": [
+                                    "Succeeded"
+                                ]
+                            }
                         },
                         "Check_Followups": {
                             "type": "If",
                             "expression": {
                                 "or": [
-                                    { "greater": ["@length(variables('PendingIndicators'))", 0] },
-                                    { "greater": ["@length(variables('FailedIndicators'))", 0] }
+                                    {
+                                        "greater": [
+                                            "@length(variables('PendingIndicators'))",
+                                            0
+                                        ]
+                                    },
+                                    {
+                                        "greater": [
+                                            "@length(variables('FailedIndicators'))",
+                                            0
+                                        ]
+                                    }
                                 ]
                             },
                             "actions": {
@@ -313,7 +513,9 @@
                                     "type": "ApiConnection",
                                     "inputs": {
                                         "host": {
-                                            "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" }
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
                                         },
                                         "method": "post",
                                         "path": "/Incidents/Comment",
@@ -325,7 +527,12 @@
                                     "runAfter": {}
                                 }
                             },
-                            "runAfter": { "For_Each_Entity": ["Succeeded", "Failed"] }
+                            "runAfter": {
+                                "For_Each_Entity": [
+                                    "Succeeded",
+                                    "Failed"
+                                ]
+                            }
                         }
                     }
                 },
@@ -335,15 +542,30 @@
                             "azuresentinel": {
                                 "connectionId": "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]",
                                 "connectionName": "[variables('SentinelConnectionName')]",
-                                "connectionProperties": { "authentication": { "type": "ManagedServiceIdentity" } },
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
                                 "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', resourceGroup().location, 'azuresentinel')]"
                             }
                         }
                     },
-                    "SocradarApiKey": { "value": "[parameters('SocradarApiKey')]" },
-                    "CompanyId": { "value": "[parameters('CompanyId')]" },
-                    "RiskScoreThreshold": { "value": "[parameters('RiskScoreThreshold')]" },
-                    "MaxIndicators": { "value": "[parameters('MaxIndicators')]" }
+                    "SocradarApiKey": {
+                        "value": "[parameters('SocradarApiKey')]"
+                    },
+                    "SocradarIocApiKey": {
+                        "value": "[if(empty(parameters('SocradarIocApiKey')), parameters('SocradarApiKey'), parameters('SocradarIocApiKey'))]"
+                    },
+                    "CompanyId": {
+                        "value": "[parameters('CompanyId')]"
+                    },
+                    "RiskScoreThreshold": {
+                        "value": "[parameters('RiskScoreThreshold')]"
+                    },
+                    "MaxIndicators": {
+                        "value": "[parameters('MaxIndicators')]"
+                    }
                 }
             }
         },
@@ -367,7 +589,9 @@
             "apiVersion": "2022-04-01",
             "name": "[guid(variables('workspaceResourceId'), parameters('PlaybookName'), variables('sentinelRoleDefinitionId'))]",
             "scope": "[variables('workspaceResourceId')]",
-            "dependsOn": [ "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]" ],
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
+            ],
             "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('sentinelRoleDefinitionId'))]",
                 "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'Full').identity.principalId]",
@@ -385,7 +609,9 @@
             ],
             "properties": {
                 "mode": "Incremental",
-                "expressionEvaluationOptions": { "scope": "outer" },
+                "expressionEvaluationOptions": {
+                    "scope": "outer"
+                },
                 "template": {
                     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
                     "contentVersion": "1.0.0.0",
@@ -407,10 +633,25 @@
         }
     ],
     "outputs": {
-        "logicAppName": { "type": "string", "value": "[parameters('PlaybookName')]" },
-        "trigger": { "type": "string", "value": "Microsoft Sentinel incident creation" },
-        "enrichmentApi": { "type": "string", "value": "SOCRadar IOC Enrichment (indicator_details)" },
-        "riskScoreThreshold": { "type": "int", "value": "[parameters('RiskScoreThreshold')]" },
-        "note": { "type": "string", "value": "After deployment, create a Microsoft Sentinel automation rule to run this playbook on incident creation (portal step). For SOCRadar-Alarm-Import incidents, set CompanyId so the playbook fetches the alarm's related entities from SOCRadar. Handles 200 (enrich), 202 (pending), 404/4xx (skip) gracefully." }
+        "logicAppName": {
+            "type": "string",
+            "value": "[parameters('PlaybookName')]"
+        },
+        "trigger": {
+            "type": "string",
+            "value": "Microsoft Sentinel incident creation"
+        },
+        "enrichmentApi": {
+            "type": "string",
+            "value": "SOCRadar IOC Enrichment (indicator_details)"
+        },
+        "riskScoreThreshold": {
+            "type": "int",
+            "value": "[parameters('RiskScoreThreshold')]"
+        },
+        "note": {
+            "type": "string",
+            "value": "After deployment, create a Microsoft Sentinel automation rule to run this playbook on incident creation (portal step). For SOCRadar-Alarm-Import incidents, set CompanyId so the playbook fetches the alarm's related entities from SOCRadar. IOC enrichment calls indicator_details, which needs a Standard Licensed APIs (advanced tier) key -- set SocradarIocApiKey if yours differs from SocradarApiKey. Handles 200 (enrich), 202 (pending), 404/4xx (skip) gracefully."
+        }
     }
 }
