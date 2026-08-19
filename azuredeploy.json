@@ -630,7 +630,7 @@
                             "type": "Http",
                             "inputs": {
                                 "method": "GET",
-                                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1&$filter=startswith(properties/title, ''[SOCRadar]'')')]",
+                                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1&$orderby=properties/createdTimeUtc%20desc&$filter=startswith(properties/title, ''[SOCRadar]'')')]",
                                 "authentication": {
                                     "type": "ManagedServiceIdentity"
                                 },
@@ -645,7 +645,7 @@
                         },
                         "Determine_Lookback": {
                             "type": "Compose",
-                            "inputs": "@if(equals(length(coalesce(body('Query_Existing_SOCRadar_Incidents')?['value'], json('[]'))), 0), parameters('InitialLookbackMinutes'), max(mul(parameters('PollingIntervalMinutes'), 6), 60))",
+                            "inputs": "@if(equals(length(coalesce(body('Query_Existing_SOCRadar_Incidents')?['value'], json('[]'))), 0), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(first(body('Query_Existing_SOCRadar_Incidents')?['value'])?['properties']?['createdTimeUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60)), 10080))",
                             "runAfter": {
                                 "Query_Existing_SOCRadar_Incidents": [
                                     "Succeeded"
@@ -2197,7 +2197,7 @@
                             "actions": {
                                 "Extract_Alarm_ID": {
                                     "type": "Compose",
-                                    "inputs": "@split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0]",
+                                    "inputs": "@if(contains(coalesce(items('For_Each_Incident')?['properties']?['title'], ''), '#'), split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0], '')",
                                     "runAfter": {}
                                 },
                                 "Check_Has_Synced_Tag": {
