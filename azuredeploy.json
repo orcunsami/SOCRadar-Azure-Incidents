@@ -120,6 +120,13 @@
             "metadata": {
                 "description": "Extract IP, domain and URL indicators from alarm details and attach them to the incident as entities. Requires Microsoft Sentinel Contributor for the import playbook because bookmark write is not included in Responder. When false, the import identity keeps the SentinelRoleLevel role."
             }
+        },
+        "DeployNewWorkspace": {
+            "type": "bool",
+            "defaultValue": false,
+            "metadata": {
+                "description": "Create a new Log Analytics workspace named WorkspaceName. Leave false when the workspace already exists. The workspace resource declares no workspace-level settings, so even a mistaken true cannot rewrite an existing workspace's pricing tier, retention or daily cap: a template only overwrites the fields it states, and this one states none. A new workspace is created with the subscription default tier. Only honoured when WorkspaceResourceGroup is the deployment resource group, because a workspace cannot be created in another resource group from here."
+            }
         }
     },
     "variables": {
@@ -138,6 +145,7 @@
         "SentinelResponderRoleId": "3e150937-b8fe-4cfb-8069-0eaf05ecd056",
         "sentinelRoleDefinitionId": "[if(equals(parameters('SentinelRoleLevel'), 'Responder'), variables('SentinelResponderRoleId'), variables('SentinelContributorRoleId'))]",
         "isExternalWorkspace": "[not(equals(parameters('WorkspaceResourceGroup'), resourceGroup().name))]",
+        "deployWorkspace": "[and(parameters('DeployNewWorkspace'), not(variables('isExternalWorkspace')))]",
         "LogAnalyticsReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893",
         "MonitoringMetricsPublisherRoleId": "3913510d-42f4-4e42-8a64-420c390055eb",
         "workspaceResourceId": "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
@@ -145,16 +153,12 @@
     },
     "resources": [
         {
-            "condition": "[not(variables('isExternalWorkspace'))]",
+            "condition": "[variables('deployWorkspace')]",
             "type": "Microsoft.OperationalInsights/workspaces",
             "apiVersion": "2023-09-01",
             "name": "[parameters('WorkspaceName')]",
             "location": "[parameters('WorkspaceLocation')]",
-            "properties": {
-                "sku": {
-                    "name": "PerGB2018"
-                }
-            }
+            "properties": {}
         },
         {
             "condition": "[not(variables('isExternalWorkspace'))]",
@@ -1227,6 +1231,50 @@
                                                                                     "interval": "PT10S"
                                                                                 }
                                                                             }
+                                                                        },
+                                                                        "Delay_Before_Relation_Retry": {
+                                                                            "type": "Wait",
+                                                                            "runAfter": {
+                                                                                "Relate_Bookmark_To_Incident": [
+                                                                                    "Failed",
+                                                                                    "TimedOut"
+                                                                                ]
+                                                                            },
+                                                                            "inputs": {
+                                                                                "interval": {
+                                                                                    "count": 15,
+                                                                                    "unit": "Second"
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                        "Relate_Bookmark_Retry": {
+                                                                            "type": "Http",
+                                                                            "runAfter": {
+                                                                                "Delay_Before_Relation_Retry": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "inputs": {
+                                                                                "method": "PUT",
+                                                                                "uri": "https://management.azure.com@{outputs('Resolve_Entity_Target')['incidentId']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2023-11-01",
+                                                                                "headers": {
+                                                                                    "Content-Type": "application/json"
+                                                                                },
+                                                                                "authentication": {
+                                                                                    "type": "ManagedServiceIdentity",
+                                                                                    "audience": "https://management.azure.com"
+                                                                                },
+                                                                                "body": {
+                                                                                    "properties": {
+                                                                                        "relatedResourceId": "@{body('Create_IoC_Bookmark')?['id']}"
+                                                                                    }
+                                                                                },
+                                                                                "retryPolicy": {
+                                                                                    "type": "exponential",
+                                                                                    "count": 3,
+                                                                                    "interval": "PT10S"
+                                                                                }
+                                                                            }
                                                                         }
                                                                     },
                                                                     "else": {
@@ -1887,6 +1935,50 @@
                                                     "type": "Http",
                                                     "runAfter": {
                                                         "BF_Create_IoC_Bookmark": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "inputs": {
+                                                        "method": "PUT",
+                                                        "uri": "https://management.azure.com@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
+                                                        "headers": {
+                                                            "Content-Type": "application/json"
+                                                        },
+                                                        "authentication": {
+                                                            "type": "ManagedServiceIdentity",
+                                                            "audience": "https://management.azure.com"
+                                                        },
+                                                        "body": {
+                                                            "properties": {
+                                                                "relatedResourceId": "@{body('BF_Create_IoC_Bookmark')?['id']}"
+                                                            }
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 3,
+                                                            "interval": "PT10S"
+                                                        }
+                                                    }
+                                                },
+                                                "BF_Delay_Before_Relation_Retry": {
+                                                    "type": "Wait",
+                                                    "runAfter": {
+                                                        "BF_Relate_Bookmark_To_Incident": [
+                                                            "Failed",
+                                                            "TimedOut"
+                                                        ]
+                                                    },
+                                                    "inputs": {
+                                                        "interval": {
+                                                            "count": 15,
+                                                            "unit": "Second"
+                                                        }
+                                                    }
+                                                },
+                                                "BF_Relate_Bookmark_Retry": {
+                                                    "type": "Http",
+                                                    "runAfter": {
+                                                        "BF_Delay_Before_Relation_Retry": [
                                                             "Succeeded"
                                                         ]
                                                     },
