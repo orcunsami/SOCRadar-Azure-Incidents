@@ -80,6 +80,13 @@
                 "description": "Data Collection Rule immutable ID (required if EnableAuditLogging=true)"
             }
         },
+        "AuditDcrResourceId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Audit DCR resource ID, the audit infrastructure template's dcrId output (required if EnableAuditLogging=true, otherwise ingestion returns 403)"
+            }
+        },
         "EnableAlarmsTable": {
             "type": "bool",
             "defaultValue": false,
@@ -99,6 +106,13 @@
             "defaultValue": "",
             "metadata": {
                 "description": "Alarms DCR immutable ID (required if EnableAlarmsTable=true)"
+            }
+        },
+        "AlarmsDcrResourceId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Alarms DCR resource ID, the alarms infrastructure template's alarmsDcrId output (required if EnableAlarmsTable=true, otherwise ingestion returns 403)"
             }
         },
         "AlarmsStreamName": {
@@ -866,6 +880,50 @@
                                                                                     "interval": "PT10S"
                                                                                 }
                                                                             }
+                                                                        },
+                                                                        "Delay_Before_Relation_Retry": {
+                                                                            "type": "Wait",
+                                                                            "runAfter": {
+                                                                                "Relate_Bookmark_To_Incident": [
+                                                                                    "Failed",
+                                                                                    "TimedOut"
+                                                                                ]
+                                                                            },
+                                                                            "inputs": {
+                                                                                "interval": {
+                                                                                    "count": 15,
+                                                                                    "unit": "Second"
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                        "Relate_Bookmark_Retry": {
+                                                                            "type": "Http",
+                                                                            "runAfter": {
+                                                                                "Delay_Before_Relation_Retry": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "inputs": {
+                                                                                "method": "PUT",
+                                                                                "uri": "https://management.azure.com@{outputs('Resolve_Entity_Target')['incidentId']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2023-11-01",
+                                                                                "headers": {
+                                                                                    "Content-Type": "application/json"
+                                                                                },
+                                                                                "authentication": {
+                                                                                    "type": "ManagedServiceIdentity",
+                                                                                    "audience": "https://management.azure.com"
+                                                                                },
+                                                                                "body": {
+                                                                                    "properties": {
+                                                                                        "relatedResourceId": "@{body('Create_IoC_Bookmark')?['id']}"
+                                                                                    }
+                                                                                },
+                                                                                "retryPolicy": {
+                                                                                    "type": "exponential",
+                                                                                    "count": 3,
+                                                                                    "interval": "PT10S"
+                                                                                }
+                                                                            }
                                                                         }
                                                                     },
                                                                     "else": {
@@ -1550,6 +1608,50 @@
                                                             "interval": "PT10S"
                                                         }
                                                     }
+                                                },
+                                                "BF_Delay_Before_Relation_Retry": {
+                                                    "type": "Wait",
+                                                    "runAfter": {
+                                                        "BF_Relate_Bookmark_To_Incident": [
+                                                            "Failed",
+                                                            "TimedOut"
+                                                        ]
+                                                    },
+                                                    "inputs": {
+                                                        "interval": {
+                                                            "count": 15,
+                                                            "unit": "Second"
+                                                        }
+                                                    }
+                                                },
+                                                "BF_Relate_Bookmark_Retry": {
+                                                    "type": "Http",
+                                                    "runAfter": {
+                                                        "BF_Delay_Before_Relation_Retry": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "inputs": {
+                                                        "method": "PUT",
+                                                        "uri": "https://management.azure.com@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
+                                                        "headers": {
+                                                            "Content-Type": "application/json"
+                                                        },
+                                                        "authentication": {
+                                                            "type": "ManagedServiceIdentity",
+                                                            "audience": "https://management.azure.com"
+                                                        },
+                                                        "body": {
+                                                            "properties": {
+                                                                "relatedResourceId": "@{body('BF_Create_IoC_Bookmark')?['id']}"
+                                                            }
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 3,
+                                                            "interval": "PT10S"
+                                                        }
+                                                    }
                                                 }
                                             },
                                             "else": {
@@ -1719,6 +1821,36 @@
             ],
             "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('LogAnalyticsReaderRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'Full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+        {
+            "condition": "[and(parameters('EnableAuditLogging'), not(empty(parameters('AuditDcrResourceId'))))]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid(parameters('AuditDcrResourceId'), parameters('PlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
+            "scope": "[parameters('AuditDcrResourceId')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('MonitoringMetricsPublisherRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'Full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+        {
+            "condition": "[and(parameters('EnableAlarmsTable'), not(empty(parameters('AlarmsDcrResourceId'))))]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid(parameters('AlarmsDcrResourceId'), parameters('PlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
+            "scope": "[parameters('AlarmsDcrResourceId')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('MonitoringMetricsPublisherRoleId'))]",
                 "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'Full').identity.principalId]",
                 "principalType": "ServicePrincipal"
             }
