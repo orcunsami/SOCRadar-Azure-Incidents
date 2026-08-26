@@ -13,7 +13,7 @@
             "type": "string",
             "defaultValue": "SOCRadar-Alarm-Import",
             "metadata": {
-                "description": "Name of the Logic App"
+                "description": "NOT RECOMMENDED: deploy azuredeploy.json from the repository root instead. --- Name of the Logic App"
             }
         },
         "SocradarApiKey": {
