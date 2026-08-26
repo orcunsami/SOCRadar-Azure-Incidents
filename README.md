@@ -32,7 +32,8 @@ Alarms and audit events are also written to custom Log Analytics tables. Hunting
 
 ## Prerequisites
 
-- Microsoft Sentinel workspace
+- Microsoft Sentinel workspace -- point `WorkspaceName` at an existing one, or set
+  `DeployNewWorkspace=true` to create it as part of this deployment
 - SOCRadar API key and Company ID
 
 ## Parameters
@@ -77,9 +78,11 @@ az monitor log-analytics workspace show -g <resource-group> -n <workspace> \
 
 If `lastSkuUpdate` lines up with when you first deployed this integration and the tier isn't
 the one you picked, reset your commitment tier from **Log Analytics workspaces > Usage and
-estimated costs > Pricing tier**. Retention and the daily cap were never touched -- the
-template never stated them. The current template states no workspace-level settings at all,
-so redeploying or upgrading an existing install cannot change any workspace setting again.
+estimated costs > Pricing tier**. The current template states no workspace-level settings at
+all, so redeploying or upgrading an existing install -- even with `DeployNewWorkspace=true` set
+by mistake -- cannot change its pricing tier, retention or daily cap; a mutation test against a
+live workspace (non-default 90-day retention, `DeployNewWorkspace=true`) confirmed both the
+retention and `sku.lastSkuUpdate` came back untouched after redeploying.
 
 ## What Gets Deployed
 
@@ -129,7 +132,10 @@ see [IoC Entity Enrichment](#ioc-entity-enrichment).
 Use the one-click template above for new installs. The templates under `Playbooks/` are kept
 for existing separated deployments:
 
-- They have no IoC entity enrichment.
+- The standalone Import playbook has the same IoC entity enrichment as the combined template
+  (`EnableIoCEnrichment`, default `true`) -- see [IoC Entity Enrichment](#ioc-entity-enrichment).
+  Its identity is raised to Contributor the same way. Set `EnableIoCEnrichment=false` if you
+  want it to stay on `SentinelRoleLevel`.
 - If you enable the custom tables but leave `AlarmsDcrResourceId` / `AuditDcrResourceId` empty,
   the deployment still succeeds while every ingestion call returns 403 and the tables stay
   silently empty.
