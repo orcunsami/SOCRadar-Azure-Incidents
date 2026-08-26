@@ -3,7 +3,7 @@
     "contentVersion": "1.0.0",
     "metadata": {
         "title": "SOCRadar-Alarm-Sync",
-        "description": "Syncs closed incidents from Microsoft Sentinel back to SOCRadar platform. Uses Synced tag to prevent duplicate syncs. Filters by: SOCRadar tag + Closed status + lastModified. Now with pagination for 1000+ incidents.",
+        "description": "NOT RECOMMENDED - deploy azuredeploy.json in the repository root instead, which installs this and wires the permissions it needs. Syncs closed incidents from Microsoft Sentinel back to SOCRadar platform. Uses Synced tag to prevent duplicate syncs. Filters by: SOCRadar tag + Closed status + lastModified. Now with pagination for 1000+ incidents.",
         "version": "1.0.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-20T00:00:00.000Z"
@@ -13,7 +13,7 @@
             "type": "string",
             "defaultValue": "SOCRadar-Alarm-Sync",
             "metadata": {
-                "description": "Name of the Logic App"
+                "description": "NOT RECOMMENDED: deploy azuredeploy.json from the repository root instead. --- Name of the Logic App"
             }
         },
         "SocradarApiKey": {

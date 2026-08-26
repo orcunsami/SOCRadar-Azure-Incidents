@@ -3,7 +3,7 @@
     "contentVersion": "1.0.0",
     "metadata": {
         "title": "SOCRadar-Alarms-Infrastructure",
-        "description": "Creates DCE, Custom Table and DCR for storing SOCRadar alarms in Log Analytics",
+        "description": "NOT RECOMMENDED - deploy azuredeploy.json in the repository root instead, which creates this and wires the playbook permissions to it. Creates DCE, Custom Table and DCR for storing SOCRadar alarms in Log Analytics",
         "version": "1.0.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-04T00:00:00.000Z"
@@ -11,7 +11,7 @@
     "parameters": {
         "WorkspaceName": {
             "type": "string",
-            "metadata": { "description": "Microsoft Sentinel Log Analytics Workspace Name" }
+            "metadata": { "description": "NOT RECOMMENDED: deploy azuredeploy.json from the repository root instead. --- Microsoft Sentinel Log Analytics Workspace Name" }
         },
         "WorkspaceLocation": {
             "type": "string",
