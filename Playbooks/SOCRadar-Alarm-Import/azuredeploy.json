@@ -953,7 +953,7 @@
                                                     "type": "Query",
                                                     "inputs": {
                                                         "from": "@result('Enrich_Incident_Entities')",
-                                                        "where": "@equals(item()?['status'], 'Failed')"
+                                                        "where": "@and(equals(item()?['status'], 'Failed'), not(equals(item()?['name'], 'Relate_Bookmark_To_Incident')))"
                                                     },
                                                     "runAfter": {
                                                         "IoC_Enrichment_Status": [
