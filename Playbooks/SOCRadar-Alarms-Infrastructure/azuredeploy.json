@@ -15,7 +15,7 @@
         },
         "WorkspaceLocation": {
             "type": "string",
-            "metadata": { "description": "Location/region of the Log Analytics workspace (e.g., centralus, northeurope)" }
+            "metadata": { "description": "Region of the Log Analytics workspace (e.g., centralus, northeurope). This is the region of the WORKSPACE, which can differ from the region of the resource group you deploy into; read it from the workspace Overview blade rather than assuming. A wrong value fails the deployment with LinkedResourceNotFound: Linked Workspace ... was not found in location <region>; if the workspace name is correct, that error means this parameter is wrong." }
         },
         "TableRetentionDays": {
             "type": "int",

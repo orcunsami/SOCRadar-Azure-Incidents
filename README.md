@@ -173,7 +173,20 @@ Import**, then select the files. The first two need `EnableAlarmsTable=true`.
 
 ## Cross-Region / Cross-RG
 
-- Different region -> set `WorkspaceLocation`.
+- Different region -> set `WorkspaceLocation` to the workspace's own region. A workspace's
+  region is independent of its resource group's region, so read it from the workspace
+  Overview blade instead of assuming they match -- the parameter defaults to the resource
+  group's region, which is wrong whenever they differ. Deploying with the wrong value fails with:
+
+  ```
+  LinkedResourceNotFound: Linked Workspace '/subscriptions/.../workspaces/<name>'
+  was not found in location '<region>'
+  ```
+
+  If the workspace name is correct, the region is the cause: set `WorkspaceLocation` to the
+  workspace's region and redeploy -- the message names the resource, not the actual cause.
+  (The template cannot read the region off the workspace for you: ARM rejects the
+  `reference()` function in a resource's `location` field.)
 - Different resource group -> set `WorkspaceResourceGroup`. Custom tables and workbook deploy into the workspace RG.
 - `DeployNewWorkspace` only works in the deployment resource group -- a workspace cannot be created in another RG from this template.
 
