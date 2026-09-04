@@ -66,6 +66,9 @@ jobs:
       - name: Import lookback comes from a checkpoint, not from incident titles
         run: python3 tests/test_checkpoint.py
 
+      - name: Cross-RG role assignments grant the same roles as the same-RG path
+        run: python3 tests/test_cross_rg_roles.py
+
       - name: No secrets in tracked files
         run: |
           set -e
