@@ -7,12 +7,16 @@ templates hold two hand-maintained copies of the same logic; they can silently d
 apart. This check compares the expressions that carry the behaviour and exits
 non-zero when they stop matching.
 
-Adaptation notes (this repo differs from the upstream repo this was ported from):
-  - This repo's sync playbook has no named "Check_SOCRadar_Write_Succeeded" condition
-    action; Add_Synced_Tag is instead gated purely by its runAfter dependency on
-    Update_SOCRadar_Status ("Succeeded"). The guard check below compares that
-    dependency (and the containing If-action) between root and standalone instead of
-    a named condition action that does not exist here.
+History of the write-guard check (corrected 2026-09-04):
+  - An earlier note here claimed this repo's sync playbook had no named
+    "Check_SOCRadar_Write_Succeeded" condition action, and the guard check was
+    replaced with a comparison of Add_Synced_Tag's runAfter. That claim was wrong.
+    The action does exist, in both the one-click template and the standalone
+    playbook, at For_Each_Incident/Check_If_Closed_And_Not_Synced/
+    Check_SOCRadar_Write_Succeeded, and Add_Synced_Tag sits inside it. The
+    replacement check compared an empty runAfter with an empty runAfter, so it
+    could never fail. The original expression comparison is restored below and the
+    placement check now names the guard itself.
 Run:  python3 tools/check_template_drift.py
 """
 
@@ -174,23 +178,34 @@ def main():
     for name in ("Update_SOCRadar_Status", "Update_SOCRadar_Severity"):
         compare(name + " body", request_body(root_sync, name), request_body(mod_sync, name))
 
-    # Sync playbook guard: this repo has no named "write succeeded" condition action
-    # (see module docstring). Add_Synced_Tag is gated by its runAfter dependency on
-    # Update_SOCRadar_Status instead -- compare that dependency between root and
-    # standalone so a change to the guard mechanism on only one side is caught.
+    # Sync playbook: the guard that stops a failed SOCRadar write from being marked as
+    # synced. Both sides must carry the same condition expression.
+    compare(
+        "Check_SOCRadar_Write_Succeeded",
+        action_field(root_sync, "Check_SOCRadar_Write_Succeeded", "expression"),
+        action_field(mod_sync, "Check_SOCRadar_Write_Succeeded", "expression"),
+    )
+
+    # Add_Synced_Tag's runAfter must also match, so a change to the ordering mechanism
+    # on only one side is caught alongside the expression.
     compare(
         "Add_Synced_Tag runAfter",
         run_after(root_sync, "Add_Synced_Tag"),
         run_after(mod_sync, "Add_Synced_Tag"),
     )
 
-    # Add_Synced_Tag must sit inside the closed-and-not-synced guard on both sides.
+    # Add_Synced_Tag must sit inside the write-succeeded guard on both sides. Naming the
+    # guard itself is the point: a tag placed under Check_If_Closed_And_Not_Synced but
+    # outside Check_SOCRadar_Write_Succeeded would mark a failed write as synced.
     for label, actions in (("root", root_sync), ("standalone", mod_sync)):
         placed = [k for k in actions if k.split("/")[-1] == "Add_Synced_Tag"]
         if not placed:
             failures.append(f"Add_Synced_Tag: not found in the {label} sync playbook")
-        elif "Check_If_Closed_And_Not_Synced" not in placed[0]:
-            failures.append(f"Add_Synced_Tag: not inside the guard in the {label} sync playbook ({placed[0]})")
+        elif "Check_SOCRadar_Write_Succeeded" not in placed[0]:
+            failures.append(
+                f"Add_Synced_Tag: not inside Check_SOCRadar_Write_Succeeded in the "
+                f"{label} sync playbook ({placed[0]})"
+            )
 
     # The audit row's own fields: standalone once logged the alarm id into IncidentId,
     # losing the Sentinel incident name the shipped KQL projects.
