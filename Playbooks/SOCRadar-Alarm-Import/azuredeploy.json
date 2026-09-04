@@ -165,7 +165,8 @@
         "LogAnalyticsReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893",
         "MonitoringMetricsPublisherRoleId": "3913510d-42f4-4e42-8a64-420c390055eb",
         "AuditStreamName": "Custom-SOCRadarAuditLog_CL",
-        "importSentinelRoleDefinitionId": "[if(parameters('EnableIoCEnrichment'), variables('SentinelContributorRoleId'), variables('sentinelRoleDefinitionId'))]"
+        "importSentinelRoleDefinitionId": "[if(parameters('EnableIoCEnrichment'), variables('SentinelContributorRoleId'), variables('sentinelRoleDefinitionId'))]",
+        "managementBaseUrl": "[if(endsWith(environment().resourceManager, '/'), substring(environment().resourceManager, 0, sub(length(environment().resourceManager), 1)), environment().resourceManager)]"
     },
     "resources": [
         {
@@ -265,6 +266,9 @@
                         },
                         "EnableIoCEnrichment": {
                             "type": "Bool"
+                        },
+                        "ManagementBaseUrl": {
+                            "type": "String"
                         }
                     },
                     "triggers": {
@@ -283,7 +287,7 @@
                             "type": "Http",
                             "inputs": {
                                 "method": "GET",
-                                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1&$orderby=properties/createdTimeUtc%20desc&$filter=startswith(properties/title, ''[SOCRadar]'')')]",
+                                "uri": "[concat(variables('managementBaseUrl'), '/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1&$orderby=properties/createdTimeUtc%20desc&$filter=startswith(properties/title, ''[SOCRadar]'')')]",
                                 "authentication": {
                                     "type": "ManagedServiceIdentity"
                                 },
@@ -338,7 +342,7 @@
                                     {
                                         "name": "incidents_next_link",
                                         "type": "string",
-                                        "value": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1000&$filter=startswith(properties/title, ''[SOCRadar]'')')]"
+                                        "value": "[concat(variables('managementBaseUrl'), '/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1000&$filter=startswith(properties/title, ''[SOCRadar]'')')]"
                                     }
                                 ]
                             },
@@ -824,13 +828,13 @@
                                                                             "runAfter": {},
                                                                             "inputs": {
                                                                                 "method": "PUT",
-                                                                                "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada7-0000-4000-8000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2024-10-01-preview",
+                                                                                "uri": "@{parameters('ManagementBaseUrl')}/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada7-0000-4000-8000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2024-10-01-preview",
                                                                                 "headers": {
                                                                                     "Content-Type": "application/json"
                                                                                 },
                                                                                 "authentication": {
                                                                                     "type": "ManagedServiceIdentity",
-                                                                                    "audience": "https://management.azure.com"
+                                                                                    "audience": "@{parameters('ManagementBaseUrl')}"
                                                                                 },
                                                                                 "body": {
                                                                                     "properties": {
@@ -861,13 +865,13 @@
                                                                             },
                                                                             "inputs": {
                                                                                 "method": "PUT",
-                                                                                "uri": "https://management.azure.com@{outputs('Resolve_Entity_Target')['incidentId']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2023-11-01",
+                                                                                "uri": "@{parameters('ManagementBaseUrl')}@{outputs('Resolve_Entity_Target')['incidentId']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2023-11-01",
                                                                                 "headers": {
                                                                                     "Content-Type": "application/json"
                                                                                 },
                                                                                 "authentication": {
                                                                                     "type": "ManagedServiceIdentity",
-                                                                                    "audience": "https://management.azure.com"
+                                                                                    "audience": "@{parameters('ManagementBaseUrl')}"
                                                                                 },
                                                                                 "body": {
                                                                                     "properties": {
@@ -905,13 +909,13 @@
                                                                             },
                                                                             "inputs": {
                                                                                 "method": "PUT",
-                                                                                "uri": "https://management.azure.com@{outputs('Resolve_Entity_Target')['incidentId']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2023-11-01",
+                                                                                "uri": "@{parameters('ManagementBaseUrl')}@{outputs('Resolve_Entity_Target')['incidentId']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', string(items('For_Each_Alarm')?['alarm_id'])), length(string(items('For_Each_Alarm')?['alarm_id'])), 12)}?api-version=2023-11-01",
                                                                                 "headers": {
                                                                                     "Content-Type": "application/json"
                                                                                 },
                                                                                 "authentication": {
                                                                                     "type": "ManagedServiceIdentity",
-                                                                                    "audience": "https://management.azure.com"
+                                                                                    "audience": "@{parameters('ManagementBaseUrl')}"
                                                                                 },
                                                                                 "body": {
                                                                                     "properties": {
@@ -1152,13 +1156,13 @@
                                                                             "type": "Http",
                                                                             "inputs": {
                                                                                 "method": "PUT",
-                                                                                "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/incidents/@{guid()}?api-version=2023-11-01",
+                                                                                "uri": "@{parameters('ManagementBaseUrl')}/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/incidents/@{guid()}?api-version=2023-11-01",
                                                                                 "headers": {
                                                                                     "Content-Type": "application/json"
                                                                                 },
                                                                                 "authentication": {
                                                                                     "type": "ManagedServiceIdentity",
-                                                                                    "audience": "https://management.azure.com"
+                                                                                    "audience": "@{parameters('ManagementBaseUrl')}"
                                                                                 },
                                                                                 "body": {
                                                                                     "properties": "@outputs('Add_ClassificationReason_If_Needed')"
@@ -1552,13 +1556,13 @@
                                                     "runAfter": {},
                                                     "inputs": {
                                                         "method": "PUT",
-                                                        "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada7-0000-4000-8000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2024-10-01-preview",
+                                                        "uri": "@{parameters('ManagementBaseUrl')}/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada7-0000-4000-8000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2024-10-01-preview",
                                                         "headers": {
                                                             "Content-Type": "application/json"
                                                         },
                                                         "authentication": {
                                                             "type": "ManagedServiceIdentity",
-                                                            "audience": "https://management.azure.com"
+                                                            "audience": "@{parameters('ManagementBaseUrl')}"
                                                         },
                                                         "body": {
                                                             "properties": {
@@ -1589,13 +1593,13 @@
                                                     },
                                                     "inputs": {
                                                         "method": "PUT",
-                                                        "uri": "https://management.azure.com@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
+                                                        "uri": "@{parameters('ManagementBaseUrl')}@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
                                                         "headers": {
                                                             "Content-Type": "application/json"
                                                         },
                                                         "authentication": {
                                                             "type": "ManagedServiceIdentity",
-                                                            "audience": "https://management.azure.com"
+                                                            "audience": "@{parameters('ManagementBaseUrl')}"
                                                         },
                                                         "body": {
                                                             "properties": {
@@ -1633,13 +1637,13 @@
                                                     },
                                                     "inputs": {
                                                         "method": "PUT",
-                                                        "uri": "https://management.azure.com@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
+                                                        "uri": "@{parameters('ManagementBaseUrl')}@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
                                                         "headers": {
                                                             "Content-Type": "application/json"
                                                         },
                                                         "authentication": {
                                                             "type": "ManagedServiceIdentity",
-                                                            "audience": "https://management.azure.com"
+                                                            "audience": "@{parameters('ManagementBaseUrl')}"
                                                         },
                                                         "body": {
                                                             "properties": {
@@ -1791,6 +1795,9 @@
                     },
                     "EnableIoCEnrichment": {
                         "value": "[parameters('EnableIoCEnrichment')]"
+                    },
+                    "ManagementBaseUrl": {
+                        "value": "[variables('managementBaseUrl')]"
                     }
                 }
             }

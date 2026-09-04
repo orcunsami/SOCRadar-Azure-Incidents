@@ -54,6 +54,9 @@ jobs:
       - name: Severity write-back stays gated and can only raise a severity
         run: python3 tests/test_severity_sync_logic.py
 
+      - name: ARM host comes from environment(), never a literal
+        run: python3 tests/test_management_base_url.py
+
       - name: No secrets in tracked files
         run: |
           set -e

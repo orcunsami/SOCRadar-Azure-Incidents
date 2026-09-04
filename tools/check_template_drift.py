@@ -286,6 +286,46 @@ def main():
             "never creates or rewrites a workspace unless the operator asks for it"
         )
 
+    # No template may hardcode the Azure public cloud ARM host. environment().resourceManager
+    # is what lets the same template deploy into a sovereign cloud, and a single leftover
+    # literal is enough to break it silently: the call only 404s at run time, never at
+    # validate time. The $schema URLs are a different host and stay as they are.
+    for path in ALL_TEMPLATES:
+        rel = os.path.relpath(path, REPO)
+        for lineno, line in enumerate(open(path).read().split("\n"), 1):
+            if "https://management.azure.com" not in line:
+                continue
+            if "schema.management.azure.com" in line:
+                continue
+            failures.append(f"{rel}:{lineno}: hardcoded ARM host - use environment().resourceManager")
+
+    # The variable that resolves the ARM host has to be identical in all three templates
+    # that build ARM URLs, or one copy silently keeps talking to the wrong cloud.
+    base_expressions = {}
+    for path in (ROOT, IMPORT, SYNC):
+        base_expressions[os.path.relpath(path, REPO)] = load(path).get("variables", {}).get("managementBaseUrl")
+    if None in base_expressions.values() or len(set(base_expressions.values())) != 1:
+        failures.append("managementBaseUrl is missing or differs between templates: "
+                        + json.dumps(base_expressions, indent=2))
+
+    # A workflow that builds an ARM URL at run time reads the host from a workflow
+    # parameter. An undeclared or unsupplied parameter makes the whole definition invalid,
+    # and a declared-but-unused one means the URLs went back to a literal.
+    for path in (ROOT, IMPORT, SYNC):
+        rel = os.path.relpath(path, REPO)
+        for resource in load(path).get("resources", []):
+            if resource.get("type") != "Microsoft.Logic/workflows":
+                continue
+            definition = resource["properties"]["definition"]
+            used = "ManagementBaseUrl" in json.dumps(definition.get("actions", {}))
+            declared = "ManagementBaseUrl" in (definition.get("parameters") or {})
+            supplied = "ManagementBaseUrl" in (resource["properties"].get("parameters") or {})
+            if used and not (declared and supplied):
+                failures.append(f"{rel}: a workflow uses ManagementBaseUrl without declaring it "
+                                f"(declared={declared}, supplied={supplied})")
+            if declared and not used:
+                failures.append(f"{rel}: ManagementBaseUrl is declared but no action uses it")
+
     # Bounded retries and loops, so a failing API call cannot stall the integration.
     # Swept across every template in the repo (not just root/import/sync) -- this is a
     # cheap regression net.
