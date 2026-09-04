@@ -173,8 +173,43 @@ def main():
     # Import playbook behaviour that has drifted before. Build_Labels is here because the
     # incident's labels are what the sync playbook reads back, so a one-sided change to it
     # silently breaks the return path.
-    for name in ("Determine_Lookback", "Extract_Existing_IDs", "Calculate_Epoch_Start", "Build_Labels"):
+    for name in ("Determine_Lookback", "Extract_Existing_IDs", "Calculate_Epoch_Start",
+                 "Build_Labels", "Build_Tags"):
         compare(name, action_field(root_import, name, "inputs"), action_field(mod_import, name, "inputs"))
+
+    # The checkpoint is what decides how far back a run looks. A one-sided change to its
+    # URI, its body or the run-start stamp puts the two copies on different windows, and
+    # the difference only shows up as silently skipped alarms.
+    compare("Read_Checkpoint inputs", action_field(root_import, "Read_Checkpoint", "inputs"),
+            action_field(mod_import, "Read_Checkpoint", "inputs"))
+    compare("Write_Checkpoint inputs", action_field(root_import, "Write_Checkpoint", "inputs"),
+            action_field(mod_import, "Write_Checkpoint", "inputs"))
+    compare("Capture_Run_Start", action_field(root_import, "Capture_Run_Start", "inputs"),
+            action_field(mod_import, "Capture_Run_Start", "inputs"))
+
+    # Determine_Lookback has to tolerate a failed read. The first run of a fresh deployment
+    # gets a 404 because the checkpoint row does not exist yet; without Failed in runAfter
+    # the whole run dies before it imports anything, and validate cannot see that.
+    for label, actions in (("root", root_import), ("standalone", mod_import)):
+        after = json.loads(run_after(actions, "Determine_Lookback") or "{}")
+        if "Failed" not in (after.get("Read_Checkpoint") or []):
+            failures.append(f"Determine_Lookback: does not run after a failed Read_Checkpoint in the "
+                            f"{label} import playbook - the first run of a new deployment would die on 404")
+
+    # The checkpoint may only advance on a complete import. Writing it anywhere else means a
+    # half-read run moves the window forward and the alarms it never read are lost for good.
+    for label, actions in (("root", root_import), ("standalone", mod_import)):
+        placed = [k for k in actions if k.split("/")[-1] == "Write_Checkpoint"]
+        if not placed:
+            failures.append(f"Write_Checkpoint: not found in the {label} import playbook")
+            continue
+        if not placed[0].startswith("Verify_Import_Complete/") or "/else/" in placed[0]:
+            failures.append(f"Write_Checkpoint: not inside the success branch of Verify_Import_Complete "
+                            f"in the {label} import playbook ({placed[0]})")
+        after = json.loads(run_after(actions, "Write_Checkpoint") or "{}")
+        if after.get("Import_Complete") != ["Succeeded"]:
+            failures.append(f"Write_Checkpoint: does not run only after Import_Complete succeeded in the "
+                            f"{label} import playbook (runAfter={json.dumps(after)})")
 
     # Sync playbook: the write bodies must stay identical on both sides.
     for name in ("Update_SOCRadar_Status", "Update_SOCRadar_Severity"):
@@ -301,6 +336,15 @@ def main():
                 continue
             failures.append(f"{rel}:{lineno}: hardcoded ARM host - use environment().resourceManager")
 
+    # Same rule for the storage endpoint the checkpoint is read from and written to.
+    # environment().suffixes.storage carries the right suffix per cloud; a literal
+    # core.windows.net sends a sovereign-cloud deployment to a host that does not exist.
+    for path in ALL_TEMPLATES:
+        rel = os.path.relpath(path, REPO)
+        for lineno, line in enumerate(open(path).read().split("\n"), 1):
+            if "core.windows.net" in line:
+                failures.append(f"{rel}:{lineno}: hardcoded storage host - use environment().suffixes.storage")
+
     # The variable that resolves the ARM host has to be identical in all three templates
     # that build ARM URLs, or one copy silently keeps talking to the wrong cloud.
     base_expressions = {}
@@ -327,6 +371,32 @@ def main():
                                 f"(declared={declared}, supplied={supplied})")
             if declared and not used:
                 failures.append(f"{rel}: ManagementBaseUrl is declared but no action uses it")
+
+    # The checkpoint variables must be identical in the two templates that build the table
+    # URL, for the same reason managementBaseUrl must be: one copy pointing at a different
+    # account or table means the two deployments keep separate, silently diverging windows.
+    for name in ("checkpointStorageAccountName", "checkpointTableName", "checkpointTableUrl"):
+        values = {os.path.relpath(path, REPO): load(path).get("variables", {}).get(name)
+                  for path in (ROOT, IMPORT)}
+        if None in values.values() or len(set(values.values())) != 1:
+            failures.append(f"{name} is missing or differs between templates: " + json.dumps(values, indent=2))
+
+    # And the workflow parameter that carries it has to be declared, supplied and used
+    # together - the same three-way check the ARM host parameter gets.
+    for path in (ROOT, IMPORT, SYNC):
+        rel = os.path.relpath(path, REPO)
+        for resource in load(path).get("resources", []):
+            if resource.get("type") != "Microsoft.Logic/workflows":
+                continue
+            definition = resource["properties"]["definition"]
+            used = "CheckpointTableUrl" in json.dumps(definition.get("actions", {}))
+            declared = "CheckpointTableUrl" in (definition.get("parameters") or {})
+            supplied = "CheckpointTableUrl" in (resource["properties"].get("parameters") or {})
+            if used and not (declared and supplied):
+                failures.append(f"{rel}: a workflow uses CheckpointTableUrl without declaring it "
+                                f"(declared={declared}, supplied={supplied})")
+            if declared and not used:
+                failures.append(f"{rel}: CheckpointTableUrl is declared but no action uses it")
 
     # Bounded retries and loops, so a failing API call cannot stall the integration.
     # Swept across every template in the repo (not just root/import/sync) -- this is a

@@ -145,15 +145,25 @@ def check_import(template, label, needle=None):
         failures.append("%s: expected one import workflow, found %d" % (label, len(found)))
         return
     actions = flatten(found[0]["properties"]["definition"]["actions"])
-    build = sole(actions, "Build_Labels", label)
-    if not build:
-        return
-    expression = actions[build]["inputs"]
-    check(LABEL_PREFIX in expression,
-          "%s: Build_Labels no longer writes the %s label, so Sync cannot tell what SOCRadar's "
-          "severity was and will never sync a severity" % (label, LABEL_PREFIX))
-    check("alarm_risk_level" in expression,
-          "%s: the severity label is not built from alarm_risk_level" % label)
+    # Two actions build the incident's labels, one per creation path, and BOTH have to carry
+    # the severity. Build_Labels feeds the closed-incident REST call, which only runs when
+    # ImportAllStatuses is on. Build_Tags feeds the managed connector, which is what creates
+    # every incident on the default OPEN-only path. Putting the label in Build_Labels alone
+    # was measured live on 2026-09-04: three real incidents were created carrying
+    # SOCRadar / Domain / Impersonating Domain and no severity label at all, so the whole
+    # EXP-0172 protection was inert for the default configuration.
+    for action_name, path in (("Build_Labels", "the closed-incident REST call"),
+                              ("Build_Tags", "the managed connector, used on the default path")):
+        build = sole(actions, action_name, label)
+        if not build:
+            continue
+        expression = actions[build]["inputs"]
+        check(LABEL_PREFIX in expression,
+              "%s: %s no longer writes the %s label, so an incident created through %s carries "
+              "no SOCRadar severity and Sync will never sync one"
+              % (label, action_name, LABEL_PREFIX, path))
+        check("alarm_risk_level" in expression,
+              "%s: the severity label in %s is not built from alarm_risk_level" % (label, action_name))
 
 
 def check_decision_table():
