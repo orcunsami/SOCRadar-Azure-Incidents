@@ -10,9 +10,9 @@ Bidirectional integration between SOCRadar and Microsoft Sentinel. Alarms come i
 
 Pulls alarms from SOCRadar and opens Microsoft Sentinel incidents. Each incident is titled
 `[SOCRadar] #<alarm id> - <title>` and labelled with the alarm id, type, subtype and SOCRadar
-severity. OPEN alarms only by default. Two mechanisms keep it from importing the same alarm
-twice or re-reading the whole history every run -- see [Import window and
-de-duplication](#import-window-and-de-duplication).
+severity. OPEN alarms only by default. See [Import window and
+de-duplication](#import-window-and-de-duplication) for how it picks its window and skips alarms
+it has already imported.
 
 ```mermaid
 flowchart LR
@@ -51,10 +51,16 @@ Alarms and audit events are also written to custom Log Analytics tables. Hunting
 | `SocradarApiKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
-A wrong `WorkspaceName` cannot half-deploy anything: the template reads the workspace's own ID
-before it creates a single resource, so a typo fails the deployment up front. The one case to
-watch is `DeployNewWorkspace=true` with a typo -- that creates a second, empty workspace under
-the misspelled name instead of failing.
+A wrong `WorkspaceName` fails the deployment, but not before it has created things. ARM starts
+every resource that does not depend on the workspace in parallel, so a typo (measured, with
+`DeployNewWorkspace=false`) leaves behind the checkpoint storage account, the Data Collection
+Endpoint, the workbook, the Microsoft Sentinel API connection, and an **enabled**
+SOCRadar-Alarm-Sync Logic App polling every five minutes. Fix the name and redeploy over the
+same resource group, or delete the resource group and start again -- but do not leave the
+failed deployment sitting there, because that Logic App is running and billable.
+
+With `DeployNewWorkspace=true` a typo does not fail at all: it creates a second, empty
+workspace under the misspelled name.
 
 ### Optional
 
@@ -145,8 +151,6 @@ any incident created through the API, silently and without an error.
 
 ## Import window and de-duplication
 
-Two independent mechanisms, often confused:
-
 **The window** decides how far back to ask SOCRadar for alarms. It comes from a checkpoint row
 in the deployed storage table (`PartitionKey` = your company id, `RowKey` = `import`), stamped
 with the time the run *started*:
@@ -164,7 +168,7 @@ with the time the run *started*:
 
 **De-duplication** decides whether an alarm already has an incident. Before importing, the run
 lists every `[SOCRadar]`-titled incident in the workspace and skips any alarm whose id is
-already there. This is what makes a widened window harmless.
+already there, which is what makes a widened window harmless.
 
 Earlier versions derived the window from the newest existing incident's title. That coupled the
 window to the incident list, so a workspace whose incidents had been cleaned up would re-import
@@ -207,12 +211,19 @@ With `SyncSeverity=true` the write can only ever raise a severity:
 | HIGH | High | no -- already equal |
 | MEDIUM | High | yes |
 | LOW | Medium / High | yes |
-| any | Informational | no -- SOCRadar has no equivalent |
+| INFO | Low / Medium / High | yes |
+| any | Informational | no -- never written back |
 | unrecognised severity label | anything | no -- the incident is left alone |
 
-The four levels recognised are CRITICAL, HIGH, MEDIUM and LOW, which is what the alarm feed
-produces (measured across 803 alarms over 30 days). Any other level is written to the incident
-label but carries no rank, so the write-back skips that incident rather than guessing.
+Five levels are recognised: CRITICAL, HIGH, MEDIUM, LOW and INFO. INFO matters more than its
+name suggests -- it was 20 of the 35 alarms in the last seven days of the test feed, so an INFO
+alarm has to be raisable or the feature does nothing for most of the queue. Any level outside
+those five still lands on the incident as a label but carries no rank, so the write-back skips
+that incident rather than guessing.
+
+Note that on the way in, an INFO alarm becomes a **Low** incident: the import maps CRITICAL and
+HIGH to High, MEDIUM to Medium, and everything else to Low. Microsoft Sentinel's Informational
+is not used.
 
 The status mapping in the other direction is fixed:
 
@@ -258,8 +269,10 @@ for existing separated deployments:
   (`EnableIoCEnrichment`, default `true`) -- see [IoC Entity Enrichment](#ioc-entity-enrichment).
   Its identity is raised to Contributor the same way. Set `EnableIoCEnrichment=false` if you
   want it to stay on `SentinelRoleLevel`.
-- It deploys its own checkpoint storage account, so an import playbook deployed on its own keeps
-  its own window and does not share one with a combined install.
+- It deploys its own checkpoint storage account. The name is derived from the resource group
+  and the workspace, so an import playbook deployed into the same resource group as a combined
+  install shares that install's account and checkpoint row; deployed into another resource
+  group it keeps its own.
 - If you enable the custom tables but leave `AlarmsDcrResourceId` / `AuditDcrResourceId` empty,
   the deployment still succeeds while every ingestion call returns 403 and the tables stay
   silently empty.
@@ -335,8 +348,8 @@ Import**, then select the files. The first two need `EnableAlarmsTable=true`.
   account go into the deployment RG, and the role assignments the identities need go into the
   workspace RG. Everything analytics-related is skipped, in both resource groups: the custom
   tables, the Data Collection Endpoint and Rules, the workbook and all five hunting queries.
-  `EnableAuditLogging` and `EnableAlarmsTable` are forced off inside both Logic Apps to match, so
-  nothing tries to ingest into a table that was never created -- you get no silent 403s, and no
+  `EnableAuditLogging` and `EnableAlarmsTable` are forced off inside the import Logic App to
+  match, so nothing tries to ingest into a table that was never created -- you get no silent 403s, and no
   analytics. The Microsoft Sentinel onboarding state is also skipped, so the workspace must
   already be onboarded.
 - `DeployNewWorkspace` only works in the deployment resource group -- a workspace cannot be
