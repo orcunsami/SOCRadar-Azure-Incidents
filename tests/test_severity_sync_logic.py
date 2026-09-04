@@ -23,8 +23,14 @@ SYNC = os.path.join(REPO, "Playbooks", "SOCRadar-Alarm-Sync", "azuredeploy.json"
 IMPORT = os.path.join(REPO, "Playbooks", "SOCRadar-Alarm-Import", "azuredeploy.json")
 
 LABEL_PREFIX = "SOCRadar-Severity-"
-SOCRADAR_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "": 0}
-SENTINEL_RANK = {"High": 3, "Medium": 2, "Low": 1, "Informational": 0}
+# Rank 0 means "no usable SOCRadar severity", which is what stops the write. INFO has to
+# occupy a rank of its own: it is the most common level the feed produces (20 of 35 alarms in
+# the last 7 days, measured 2026-09-05), and while it sat at 0 an INFO alarm could never have
+# its severity raised, which made the whole feature inert for most of the feed.
+SOCRADAR_RANK = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1, "": 0}
+# Microsoft Sentinel's Informational stays at 0 on purpose: it is never written back, because
+# SOCRadar's own lowest level is INFO and lowering is not what this feature does.
+SENTINEL_RANK = {"High": 4, "Medium": 3, "Low": 2, "Informational": 0}
 
 failures = []
 
@@ -111,18 +117,30 @@ def check_sync(template, label, needle=None):
     ]}, "%s: Check_Not_Lowering no longer requires a known SOCRadar rank and a strictly higher one" % label)
 
     extract = actions.get(gate + "/Extract_SOCRadar_Severity", {}).get("inputs", "")
-    for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+    for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
         check(LABEL_PREFIX + severity in extract,
               "%s: Extract_SOCRadar_Severity does not look for %s%s" % (label, LABEL_PREFIX, severity))
 
     socradar_ranks = actions.get(gate + "/Rank_SOCRadar_Severity", {}).get("inputs", "")
-    for severity, rank in (("CRITICAL", 4), ("HIGH", 3), ("MEDIUM", 2), ("LOW", 1)):
+    for severity, rank in sorted(SOCRADAR_RANK.items()):
+        if not severity:
+            continue
         check("'%s'), %d" % (severity, rank) in socradar_ranks,
               "%s: SOCRadar rank for %s is not %d" % (label, severity, rank))
     sentinel_ranks = actions.get(gate + "/Rank_Sentinel_Severity", {}).get("inputs", "")
-    for severity, rank in (("High", 3), ("Medium", 2), ("Low", 1)):
+    for severity, rank in sorted(SENTINEL_RANK.items()):
+        if not rank:
+            continue
         check("'%s'), %d" % (severity, rank) in sentinel_ranks,
               "%s: Microsoft Sentinel rank for %s is not %d" % (label, severity, rank))
+    # The fallback matters as much as the named levels. Anything unrecognised -- and
+    # Informational, which is deliberately unnamed -- has to land on 0, or a severity nobody
+    # mapped starts comparing as if it were real.
+    check(sentinel_ranks.rstrip().endswith(", 0)))"),
+          "%s: the Microsoft Sentinel rank does not fall back to 0: %s"
+          % (label, sentinel_ranks[-40:]))
+    check(socradar_ranks.rstrip().endswith(", 0)))))"),
+          "%s: the SOCRadar rank does not fall back to 0: %s" % (label, socradar_ranks[-40:]))
 
     written = sole(actions, "Check_Severity_Write_Succeeded", label)
     if written:
@@ -196,8 +214,13 @@ def check_decision_table():
         ("LOW", "Medium", True, "raising Low to Medium is allowed"),
         ("MEDIUM", "High", True, "raising Medium to High is allowed"),
         ("", "High", False, "an incident with no SOCRadar severity label is left alone"),
-        ("LOW", "Informational", False, "Microsoft Sentinel's Informational has no SOCRadar equivalent"),
+        ("LOW", "Informational", False, "Informational is never written back"),
         ("CRITICAL", "Informational", False, "Informational must never reach the API"),
+        ("INFO", "Low", True, "INFO is the most common level in the feed and must be raisable"),
+        ("INFO", "Medium", True, "raising INFO to Medium is allowed"),
+        ("INFO", "High", True, "raising INFO to High is allowed"),
+        ("INFO", "Informational", False, "equal in meaning, and Informational is never sent"),
+        ("LOW", "Low", False, "equal severity is not worth a call"),
     ]
     for socradar, sentinel, expected, why in cases:
         actual = would_write(socradar, sentinel)
