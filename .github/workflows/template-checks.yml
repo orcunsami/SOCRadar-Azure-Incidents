@@ -45,6 +45,9 @@ jobs:
             exit 1
           fi
 
+      - name: ARM and Logic App expressions parse
+        run: python3 tools/check_expressions.py
+
       - name: Standalone templates match the one-click template
         run: python3 tools/check_template_drift.py
 
