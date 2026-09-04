@@ -1474,7 +1474,7 @@
                                                                         },
                                                                         "Build_Labels": {
                                                                             "type": "Compose",
-                                                                            "inputs": "@json(concat('[{\"labelName\": \"SOCRadar\", \"labelType\": \"User\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), ']'))",
+                                                                            "inputs": "@json(concat('[{\"labelName\": \"SOCRadar\", \"labelType\": \"User\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), , if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], '')), equals(items('For_Each_Alarm')?['alarm_risk_level'], null))), concat(', {\"labelName\": \"SOCRadar-Severity-', toUpper(replace(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], ''), '\"', '')), '\", \"labelType\": \"User\"}'), ''), ']'))",
                                                                             "runAfter": {
                                                                                 "Map_ClassificationReason": [
                                                                                     "Succeeded"
@@ -2463,43 +2463,123 @@
                                                 ]
                                             },
                                             "actions": {
-                                                "Map_Severity": {
+                                                "Extract_SOCRadar_Severity": {
                                                     "type": "Compose",
-                                                    "inputs": "@coalesce(items('For_Each_Incident')?['properties']?['severity'], 'Medium')",
-                                                    "runAfter": {}
+                                                    "runAfter": {},
+                                                    "inputs": "@if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-CRITICAL'), 'CRITICAL', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-HIGH'), 'HIGH', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-MEDIUM'), 'MEDIUM', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-LOW'), 'LOW', ''))))"
                                                 },
-                                                "Update_SOCRadar_Severity": {
-                                                    "type": "Http",
-                                                    "inputs": {
-                                                        "method": "POST",
-                                                        "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarm/severity",
-                                                        "headers": {
-                                                            "API-Key": "@{parameters('SocradarApiKey')}",
-                                                            "Content-Type": "application/json"
-                                                        },
-                                                        "body": {
-                                                            "alarm_ids": "@createArray(int(outputs('Extract_Alarm_ID')))",
-                                                            "severity": "@{outputs('Map_Severity')}"
-                                                        },
-                                                        "retryPolicy": {
-                                                            "type": "exponential",
-                                                            "count": 4,
-                                                            "interval": "PT10S",
-                                                            "maximumInterval": "PT1M"
-                                                        }
-                                                    },
-                                                    "runtimeConfiguration": {
-                                                        "secureData": {
-                                                            "properties": [
-                                                                "inputs",
-                                                                "outputs"
-                                                            ]
-                                                        }
-                                                    },
+                                                "Rank_SOCRadar_Severity": {
+                                                    "type": "Compose",
                                                     "runAfter": {
-                                                        "Map_Severity": [
+                                                        "Extract_SOCRadar_Severity": [
                                                             "Succeeded"
                                                         ]
+                                                    },
+                                                    "inputs": "@if(equals(outputs('Extract_SOCRadar_Severity'), 'CRITICAL'), 4, if(equals(outputs('Extract_SOCRadar_Severity'), 'HIGH'), 3, if(equals(outputs('Extract_SOCRadar_Severity'), 'MEDIUM'), 2, if(equals(outputs('Extract_SOCRadar_Severity'), 'LOW'), 1, 0))))"
+                                                },
+                                                "Rank_Sentinel_Severity": {
+                                                    "type": "Compose",
+                                                    "runAfter": {
+                                                        "Rank_SOCRadar_Severity": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "inputs": "@if(equals(items('For_Each_Incident')?['properties']?['severity'], 'High'), 3, if(equals(items('For_Each_Incident')?['properties']?['severity'], 'Medium'), 2, if(equals(items('For_Each_Incident')?['properties']?['severity'], 'Low'), 1, 0)))"
+                                                },
+                                                "Check_Not_Lowering": {
+                                                    "type": "If",
+                                                    "runAfter": {
+                                                        "Rank_Sentinel_Severity": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "greater": [
+                                                                    "@outputs('Rank_SOCRadar_Severity')",
+                                                                    0
+                                                                ]
+                                                            },
+                                                            {
+                                                                "greater": [
+                                                                    "@outputs('Rank_Sentinel_Severity')",
+                                                                    "@outputs('Rank_SOCRadar_Severity')"
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "actions": {
+                                                        "Map_Severity": {
+                                                            "type": "Compose",
+                                                            "inputs": "@coalesce(items('For_Each_Incident')?['properties']?['severity'], 'Medium')",
+                                                            "runAfter": {}
+                                                        },
+                                                        "Update_SOCRadar_Severity": {
+                                                            "type": "Http",
+                                                            "inputs": {
+                                                                "method": "POST",
+                                                                "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarm/severity",
+                                                                "headers": {
+                                                                    "API-Key": "@{parameters('SocradarApiKey')}",
+                                                                    "Content-Type": "application/json"
+                                                                },
+                                                                "body": {
+                                                                    "alarm_ids": "@createArray(int(outputs('Extract_Alarm_ID')))",
+                                                                    "severity": "@{outputs('Map_Severity')}"
+                                                                },
+                                                                "retryPolicy": {
+                                                                    "type": "exponential",
+                                                                    "count": 4,
+                                                                    "interval": "PT10S",
+                                                                    "maximumInterval": "PT1M"
+                                                                }
+                                                            },
+                                                            "runtimeConfiguration": {
+                                                                "secureData": {
+                                                                    "properties": [
+                                                                        "inputs",
+                                                                        "outputs"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "runAfter": {
+                                                                "Map_Severity": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "Check_Severity_Write_Succeeded": {
+                                                            "type": "If",
+                                                            "runAfter": {
+                                                                "Update_SOCRadar_Severity": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "expression": {
+                                                                "and": [
+                                                                    {
+                                                                        "equals": [
+                                                                            "@coalesce(body('Update_SOCRadar_Severity')?['is_success'], false)",
+                                                                            true
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "actions": {},
+                                                            "else": {
+                                                                "actions": {
+                                                                    "Log_Severity_Write_Failed": {
+                                                                        "type": "Compose",
+                                                                        "runAfter": {},
+                                                                        "inputs": "@concat('SOCRadar rejected the severity update for alarm ', outputs('Extract_Alarm_ID'), ': ', string(coalesce(body('Update_SOCRadar_Severity')?['message'], 'no message returned')))"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "else": {
+                                                        "actions": {}
                                                     }
                                                 }
                                             },
