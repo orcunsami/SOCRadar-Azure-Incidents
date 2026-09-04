@@ -265,7 +265,7 @@
                             "actions": {
                                 "Extract_Alarm_ID": {
                                     "type": "Compose",
-                                    "inputs": "@if(contains(coalesce(items('For_Each_Incident')?['properties']?['title'], ''), '#'), split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0], '')",
+                                    "inputs": "@if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Alarm-'), split(split(string(items('For_Each_Incident')?['properties']?['labels']), 'SOCRadar-Alarm-')[1], '\"')[0], if(contains(coalesce(items('For_Each_Incident')?['properties']?['title'], ''), '#'), split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0], ''))",
                                     "runAfter": {}
                                 },
                                 "Check_Has_Synced_Tag": {

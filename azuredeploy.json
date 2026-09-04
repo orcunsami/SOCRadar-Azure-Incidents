@@ -157,7 +157,11 @@
         "MonitoringMetricsPublisherRoleId": "3913510d-42f4-4e42-8a64-420c390055eb",
         "workspaceResourceId": "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
         "importSentinelRoleDefinitionId": "[if(parameters('EnableIoCEnrichment'), variables('SentinelContributorRoleId'), variables('sentinelRoleDefinitionId'))]",
-        "managementBaseUrl": "[if(endsWith(environment().resourceManager, '/'), substring(environment().resourceManager, 0, sub(length(environment().resourceManager), 1)), environment().resourceManager)]"
+        "managementBaseUrl": "[if(endsWith(environment().resourceManager, '/'), substring(environment().resourceManager, 0, sub(length(environment().resourceManager), 1)), environment().resourceManager)]",
+        "checkpointStorageAccountName": "[take(concat('srinc', uniqueString(resourceGroup().id, parameters('WorkspaceName'))), 24)]",
+        "checkpointTableName": "ImportState",
+        "checkpointTableUrl": "[concat('https://', variables('checkpointStorageAccountName'), '.table.', environment().suffixes.storage, '/', variables('checkpointTableName'))]",
+        "StorageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3"
     },
     "resources": [
         {
@@ -720,6 +724,53 @@
             }
         },
         {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2023-05-01",
+            "name": "[variables('checkpointStorageAccountName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "minimumTlsVersion": "TLS1_2",
+                "allowSharedKeyAccess": false,
+                "allowBlobPublicAccess": false
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices",
+            "apiVersion": "2023-05-01",
+            "name": "[concat(variables('checkpointStorageAccountName'), '/default')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2023-05-01",
+            "name": "[concat(variables('checkpointStorageAccountName'), '/default/', variables('checkpointTableName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('checkpointStorageAccountName'), 'default')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName')), variables('ImportPlaybookName'), variables('StorageTableDataContributorRoleId'))]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('StorageTableDataContributorRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName')), '2019-05-01', 'Full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+        {
             "type": "Microsoft.Web/connections",
             "apiVersion": "2016-06-01",
             "name": "[variables('SentinelConnectionName')]",
@@ -745,7 +796,8 @@
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName'))]",
-                "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]"
+                "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices/tables', variables('checkpointStorageAccountName'), 'default', variables('checkpointTableName'))]"
             ],
             "properties": {
                 "state": "Enabled",
@@ -822,6 +874,9 @@
                         },
                         "ManagementBaseUrl": {
                             "type": "String"
+                        },
+                        "CheckpointTableUrl": {
+                            "type": "String"
                         }
                     },
                     "triggers": {
@@ -836,29 +891,44 @@
                         }
                     },
                     "actions": {
-                        "Query_Existing_SOCRadar_Incidents": {
+                        "Capture_Run_Start": {
+                            "type": "Compose",
+                            "inputs": "@utcNow()",
+                            "runAfter": {}
+                        },
+                        "Read_Checkpoint": {
                             "type": "Http",
                             "inputs": {
                                 "method": "GET",
-                                "uri": "[concat(variables('managementBaseUrl'), '/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('WorkspaceName'), '/providers/Microsoft.SecurityInsights/incidents?api-version=2023-11-01&$top=1&$orderby=properties/createdTimeUtc%20desc&$filter=startswith(properties/title, ''[SOCRadar]'')')]",
+                                "uri": "@{parameters('CheckpointTableUrl')}(PartitionKey='@{parameters('CompanyId')}',RowKey='import')",
+                                "headers": {
+                                    "Accept": "application/json;odata=nometadata",
+                                    "x-ms-version": "2020-12-06"
+                                },
                                 "authentication": {
-                                    "type": "ManagedServiceIdentity"
+                                    "type": "ManagedServiceIdentity",
+                                    "audience": "https://storage.azure.com"
                                 },
                                 "retryPolicy": {
                                     "type": "exponential",
-                                    "count": 4,
-                                    "interval": "PT10S",
+                                    "count": 3,
+                                    "interval": "PT5S",
                                     "maximumInterval": "PT1M"
                                 }
                             },
-                            "runAfter": {}
+                            "runAfter": {
+                                "Capture_Run_Start": [
+                                    "Succeeded"
+                                ]
+                            }
                         },
                         "Determine_Lookback": {
                             "type": "Compose",
-                            "inputs": "@if(equals(length(coalesce(body('Query_Existing_SOCRadar_Incidents')?['value'], json('[]'))), 0), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(first(body('Query_Existing_SOCRadar_Incidents')?['value'])?['properties']?['createdTimeUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60)), 10080))",
+                            "inputs": "@if(empty(coalesce(body('Read_Checkpoint')?['LastRunUtc'], '')), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(body('Read_Checkpoint')?['LastRunUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60)), 10080))",
                             "runAfter": {
-                                "Query_Existing_SOCRadar_Incidents": [
-                                    "Succeeded"
+                                "Read_Checkpoint": [
+                                    "Succeeded",
+                                    "Failed"
                                 ]
                             }
                         },
@@ -1610,7 +1680,7 @@
                                                             },
                                                             "Build_Tags": {
                                                                 "type": "Compose",
-                                                                "inputs": "@json(concat('[{\"Tag\": \"SOCRadar\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"Tag\": \"', if(greater(length(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type']), 100), concat(substring(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], 0, 97), '...'), items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type']), '\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"Tag\": \"', if(greater(length(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type']), 100), concat(substring(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], 0, 97), '...'), items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type']), '\"}'), ''), ']'))",
+                                                                "inputs": "@json(concat('[{\"Tag\": \"SOCRadar\"}, {\"Tag\": \"SOCRadar-Alarm-', string(items('For_Each_Alarm')?['alarm_id']), '\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"Tag\": \"', if(greater(length(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type']), 100), concat(substring(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], 0, 97), '...'), items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type']), '\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"Tag\": \"', if(greater(length(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type']), 100), concat(substring(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], 0, 97), '...'), items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type']), '\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], '')), equals(items('For_Each_Alarm')?['alarm_risk_level'], null))), concat(', {\"Tag\": \"SOCRadar-Severity-', toUpper(replace(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], ''), '\"', '')), '\"}'), ''), ']'))",
                                                                 "runAfter": {
                                                                     "Map_Severity": [
                                                                         "Succeeded"
@@ -1673,7 +1743,7 @@
                                                                         },
                                                                         "Build_Labels": {
                                                                             "type": "Compose",
-                                                                            "inputs": "@json(concat('[{\"labelName\": \"SOCRadar\", \"labelType\": \"User\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], '')), equals(items('For_Each_Alarm')?['alarm_risk_level'], null))), concat(', {\"labelName\": \"SOCRadar-Severity-', toUpper(replace(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], ''), '\"', '')), '\", \"labelType\": \"User\"}'), ''), ']'))",
+                                                                            "inputs": "@json(concat('[{\"labelName\": \"SOCRadar\", \"labelType\": \"User\"}, {\"labelName\": \"SOCRadar-Alarm-', string(items('For_Each_Alarm')?['alarm_id']), '\", \"labelType\": \"User\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], '')), equals(items('For_Each_Alarm')?['alarm_risk_level'], null))), concat(', {\"labelName\": \"SOCRadar-Severity-', toUpper(replace(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], ''), '\"', '')), '\", \"labelType\": \"User\"}'), ''), ']'))",
                                                                             "runAfter": {
                                                                                 "Map_ClassificationReason": [
                                                                                     "Succeeded"
@@ -2253,6 +2323,49 @@
                                     "type": "Compose",
                                     "inputs": "@concat('read all ', string(variables('total_pages')), ' page(s) of SOCRadar alarms')",
                                     "runAfter": {}
+                                },
+                                "Write_Checkpoint": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "PUT",
+                                        "uri": "@{parameters('CheckpointTableUrl')}(PartitionKey='@{parameters('CompanyId')}',RowKey='import')",
+                                        "headers": {
+                                            "Content-Type": "application/json;odata=noop",
+                                            "Accept": "application/json;odata=noop",
+                                            "x-ms-version": "2020-12-06"
+                                        },
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://storage.azure.com"
+                                        },
+                                        "body": {
+                                            "PartitionKey": "@{parameters('CompanyId')}",
+                                            "RowKey": "import",
+                                            "LastRunUtc": "@{outputs('Capture_Run_Start')}",
+                                            "LookbackMinutesUsed": "@{outputs('Determine_Lookback')}",
+                                            "PagesRead": "@{variables('pages_read')}"
+                                        },
+                                        "retryPolicy": {
+                                            "type": "exponential",
+                                            "count": 3,
+                                            "interval": "PT5S",
+                                            "maximumInterval": "PT1M"
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Import_Complete": [
+                                            "Succeeded"
+                                        ]
+                                    }
+                                },
+                                "Log_Checkpoint_Write_Failed": {
+                                    "type": "Compose",
+                                    "inputs": "@concat('Checkpoint write failed, next run falls back to InitialLookbackMinutes. Storage response: ', string(body('Write_Checkpoint')))",
+                                    "runAfter": {
+                                        "Write_Checkpoint": [
+                                            "Failed"
+                                        ]
+                                    }
                                 }
                             },
                             "else": {
@@ -2351,6 +2464,9 @@
                     },
                     "ManagementBaseUrl": {
                         "value": "[variables('managementBaseUrl')]"
+                    },
+                    "CheckpointTableUrl": {
+                        "value": "[variables('checkpointTableUrl')]"
                     }
                 }
             }
@@ -2521,7 +2637,7 @@
                             "actions": {
                                 "Extract_Alarm_ID": {
                                     "type": "Compose",
-                                    "inputs": "@if(contains(coalesce(items('For_Each_Incident')?['properties']?['title'], ''), '#'), split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0], '')",
+                                    "inputs": "@if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Alarm-'), split(split(string(items('For_Each_Incident')?['properties']?['labels']), 'SOCRadar-Alarm-')[1], '\"')[0], if(contains(coalesce(items('For_Each_Incident')?['properties']?['title'], ''), '#'), split(split(items('For_Each_Incident')?['properties']?['title'], '#')[1], ' ')[0], ''))",
                                     "runAfter": {}
                                 },
                                 "Check_Has_Synced_Tag": {

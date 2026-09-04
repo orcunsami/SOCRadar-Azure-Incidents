@@ -63,6 +63,9 @@ jobs:
       - name: Hunting queries only read columns the tables declare
         run: python3 tests/test_hunting_queries.py
 
+      - name: Import lookback comes from a checkpoint, not from incident titles
+        run: python3 tests/test_checkpoint.py
+
       - name: No secrets in tracked files
         run: |
           set -e
