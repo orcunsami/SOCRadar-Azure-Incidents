@@ -43,6 +43,13 @@
                 "description": "Polling interval in minutes (1-1440)"
             }
         },
+        "SyncSeverity": {
+            "type": "bool",
+            "defaultValue": false,
+            "metadata": {
+                "description": "Push the Microsoft Sentinel incident severity back to SOCRadar when an incident is closed. Off by default: Microsoft Sentinel has no Critical severity, so closing a SOCRadar CRITICAL alarm in Microsoft Sentinel would lower it to High and that cannot be undone. Leave this off unless Microsoft Sentinel is your authority on alarm severity."
+            }
+        },
         "_triggerStartTime": {
             "type": "string",
             "defaultValue": "[dateTimeAdd(utcNow(), 'PT3M')]",
@@ -124,6 +131,10 @@
                         },
                         "PollingIntervalMinutes": {
                             "type": "Int"
+                        },
+                        "SyncSeverity": {
+                            "type": "Bool",
+                            "defaultValue": false
                         }
                     },
                     "triggers": {
@@ -322,49 +333,6 @@
                                             },
                                             "runAfter": {}
                                         },
-                                        "Map_Severity": {
-                                            "type": "Compose",
-                                            "inputs": "@coalesce(items('For_Each_Incident')?['properties']?['severity'], 'Medium')",
-                                            "runAfter": {
-                                                "Update_SOCRadar_Status": [
-                                                    "Succeeded"
-                                                ]
-                                            }
-                                        },
-                                        "Update_SOCRadar_Severity": {
-                                            "type": "Http",
-                                            "inputs": {
-                                                "method": "POST",
-                                                "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarm/severity",
-                                                "headers": {
-                                                    "API-Key": "@{parameters('SocradarApiKey')}",
-                                                    "Content-Type": "application/json"
-                                                },
-                                                "body": {
-                                                    "alarm_ids": "@createArray(int(outputs('Extract_Alarm_ID')))",
-                                                    "severity": "@{outputs('Map_Severity')}"
-                                                },
-                                                "retryPolicy": {
-                                                    "type": "exponential",
-                                                    "count": 4,
-                                                    "interval": "PT10S",
-                                                    "maximumInterval": "PT1M"
-                                                }
-                                            },
-                                            "runtimeConfiguration": {
-                                                "secureData": {
-                                                    "properties": [
-                                                        "inputs",
-                                                        "outputs"
-                                                    ]
-                                                }
-                                            },
-                                            "runAfter": {
-                                                "Map_Severity": [
-                                                    "Succeeded"
-                                                ]
-                                            }
-                                        },
                                         "Check_SOCRadar_Write_Succeeded": {
                                             "type": "If",
                                             "expression": {
@@ -426,6 +394,68 @@
                                                     "Succeeded"
                                                 ]
                                             }
+                                        },
+                                        "Check_Severity_Sync_Enabled": {
+                                            "type": "If",
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "equals": [
+                                                            "@parameters('SyncSeverity')",
+                                                            true
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "actions": {
+                                                "Map_Severity": {
+                                                    "type": "Compose",
+                                                    "inputs": "@coalesce(items('For_Each_Incident')?['properties']?['severity'], 'Medium')",
+                                                    "runAfter": {}
+                                                },
+                                                "Update_SOCRadar_Severity": {
+                                                    "type": "Http",
+                                                    "inputs": {
+                                                        "method": "POST",
+                                                        "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/alarm/severity",
+                                                        "headers": {
+                                                            "API-Key": "@{parameters('SocradarApiKey')}",
+                                                            "Content-Type": "application/json"
+                                                        },
+                                                        "body": {
+                                                            "alarm_ids": "@createArray(int(outputs('Extract_Alarm_ID')))",
+                                                            "severity": "@{outputs('Map_Severity')}"
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 4,
+                                                            "interval": "PT10S",
+                                                            "maximumInterval": "PT1M"
+                                                        }
+                                                    },
+                                                    "runtimeConfiguration": {
+                                                        "secureData": {
+                                                            "properties": [
+                                                                "inputs",
+                                                                "outputs"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Map_Severity": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "else": {
+                                                "actions": {}
+                                            },
+                                            "runAfter": {
+                                                "Update_SOCRadar_Status": [
+                                                    "Succeeded"
+                                                ]
+                                            }
                                         }
                                     },
                                     "else": {
@@ -472,6 +502,9 @@
                     },
                     "PollingIntervalMinutes": {
                         "value": "[parameters('PollingIntervalMinutes')]"
+                    },
+                    "SyncSeverity": {
+                        "value": "[parameters('SyncSeverity')]"
                     }
                 }
             }
