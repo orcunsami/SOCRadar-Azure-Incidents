@@ -51,6 +51,9 @@ jobs:
       - name: Analytic rules match the shipped schema and ATT&CK mapping
         run: python3 tools/check_analytic_rules.py
 
+      - name: Severity write-back stays gated and can only raise a severity
+        run: python3 tests/test_severity_sync_logic.py
+
       - name: No secrets in tracked files
         run: |
           set -e
