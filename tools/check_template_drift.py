@@ -178,6 +178,26 @@ def main():
     for name in ("Update_SOCRadar_Status", "Update_SOCRadar_Severity"):
         compare(name + " body", request_body(root_sync, name), request_body(mod_sync, name))
 
+    # Sync playbook: the gate around the severity write-back. Microsoft Sentinel has no Critical
+    # severity, so an ungated write-back lowers a SOCRadar CRITICAL alarm to High on every close.
+    # A one-sided change here would leave one copy gated and the other not.
+    compare(
+        "Check_Severity_Sync_Enabled",
+        action_field(root_sync, "Check_Severity_Sync_Enabled", "expression"),
+        action_field(mod_sync, "Check_Severity_Sync_Enabled", "expression"),
+    )
+
+    # Update_SOCRadar_Severity must sit inside that gate on both sides.
+    for label, actions in (("root", root_sync), ("standalone", mod_sync)):
+        placed = [k for k in actions if k.split("/")[-1] == "Update_SOCRadar_Severity"]
+        if not placed:
+            failures.append(f"Update_SOCRadar_Severity: not found in the {label} sync playbook")
+        elif "Check_Severity_Sync_Enabled" not in placed[0]:
+            failures.append(
+                f"Update_SOCRadar_Severity: not inside Check_Severity_Sync_Enabled in the "
+                f"{label} sync playbook ({placed[0]})"
+            )
+
     # Sync playbook: the guard that stops a failed SOCRadar write from being marked as
     # synced. Both sides must carry the same condition expression.
     compare(
