@@ -165,6 +165,23 @@ def check_import(template, label, needle=None):
         check("alarm_risk_level" in expression,
               "%s: the severity label in %s is not built from alarm_risk_level" % (label, action_name))
 
+    # An alarm that is already closed in SOCRadar is imported as a closed incident, and Sync
+    # picks up every closed SOCRadar incident that has no Synced label. Without one, Sync writes
+    # a status back for a closure that came from SOCRadar in the first place - and an alarm whose
+    # status maps to Undetermined (INVESTIGATING, for one) would be written back as RESOLVED.
+    # Build_Labels is the closed path only, so the label belongs there and nowhere else: putting
+    # it in Build_Tags would make every OPEN incident unsyncable.
+    closed = sole(actions, "Build_Labels", label)
+    active = sole(actions, "Build_Tags", label)
+    if closed:
+        check('"labelName": "Synced"' in actions[closed]["inputs"],
+              "%s: Build_Labels does not mark the incident Synced, so Sync will write a status "
+              "back to SOCRadar for a closure SOCRadar itself reported" % label)
+    if active:
+        check("Synced" not in actions[active]["inputs"],
+              "%s: Build_Tags marks the incident Synced - every imported OPEN incident would then "
+              "be invisible to Sync and no closure would ever reach SOCRadar" % label)
+
 
 def check_decision_table():
     """The table is the point of the change. Every row is a customer outcome."""

@@ -1,6 +1,31 @@
 # tests/
 
-Offline checks against the live SOCRadar API. Nothing here touches Azure.
+Template checks that run in CI, plus one script that measures the live SOCRadar API.
+Nothing here deploys anything to Azure.
+
+## Template checks (CI)
+
+`.github/workflows/template-checks.yml` runs all of these on every push and PR. They read the
+templates and fail on a contract that no ARM validation can see, because ARM validates JSON
+shape and never runs a workflow action.
+
+| Check | What it pins |
+|---|---|
+| `../tools/check_expressions.py` | Every Logic App expression parses, and its function calls exist |
+| `../tools/check_template_drift.py` | The standalone playbooks have not fallen behind `azuredeploy.json` |
+| `../tools/check_analytic_rules.py` | The shipped analytic rules are well formed |
+| `test_checkpoint.py` | The import window comes from the storage checkpoint, not from incident titles: the account's name and security properties, the role assignment's scope, the GET/PUT headers Table Storage requires, and that the checkpoint is written only after a complete read |
+| `test_severity_sync_logic.py` | The severity write-back can only raise a severity, is gated by `SyncSeverity`, is judged by `is_success`, and that both label builders carry the labels Sync reads |
+| `test_management_base_url.py` | No template hardcodes the public-cloud ARM host |
+| `test_hunting_queries.py` | Every column the hunting queries read is one the deployment creates |
+
+Run them all locally:
+
+```
+for f in tools/check_*.py tests/test_*.py; do python3 "$f" || break; done
+```
+
+## Live API measurement
 
 ## check_alarm_severity.py
 

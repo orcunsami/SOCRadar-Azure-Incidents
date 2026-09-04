@@ -3,7 +3,7 @@
     "contentVersion": "1.0.0.0",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
-        "description": "Bidirectional integration: Import SOCRadar alarms to Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
+        "description": "Bidirectional integration: Import SOCRadar alarms to Microsoft Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
         "version": "1.0.0",
         "author": "SOCRadar",
         "lastUpdateTime": "2026-02-20T00:00:00.000Z"
@@ -107,7 +107,7 @@
             "type": "string",
             "defaultValue": "[resourceGroup().name]",
             "metadata": {
-                "description": "Resource group of existing Sentinel workspace. Leave default if workspace is in same RG."
+                "description": "Resource group of the existing Microsoft Sentinel workspace. Leave default if workspace is in same RG."
             }
         },
         "SentinelRoleLevel": {
@@ -118,7 +118,7 @@
                 "Responder"
             ],
             "metadata": {
-                "description": "Sentinel role for Logic Apps. Responder sufficient for incident ops (least-privilege)."
+                "description": "Microsoft Sentinel role for the Logic Apps. Responder sufficient for incident ops (least-privilege)."
             }
         },
         "EnableIoCEnrichment": {
@@ -232,7 +232,7 @@
                         {
                             "name": "IncidentId",
                             "type": "string",
-                            "description": "Sentinel incident ID"
+                            "description": "Microsoft Sentinel incident ID"
                         },
                         {
                             "name": "AlarmType",
@@ -1743,7 +1743,7 @@
                                                                         },
                                                                         "Build_Labels": {
                                                                             "type": "Compose",
-                                                                            "inputs": "@json(concat('[{\"labelName\": \"SOCRadar\", \"labelType\": \"User\"}, {\"labelName\": \"SOCRadar-Alarm-', string(items('For_Each_Alarm')?['alarm_id']), '\", \"labelType\": \"User\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], '')), equals(items('For_Each_Alarm')?['alarm_risk_level'], null))), concat(', {\"labelName\": \"SOCRadar-Severity-', toUpper(replace(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], ''), '\"', '')), '\", \"labelType\": \"User\"}'), ''), ']'))",
+                                                                            "inputs": "@json(concat('[{\"labelName\": \"SOCRadar\", \"labelType\": \"User\"}, {\"labelName\": \"Synced\", \"labelType\": \"User\"}, {\"labelName\": \"SOCRadar-Alarm-', string(items('For_Each_Alarm')?['alarm_id']), '\", \"labelType\": \"User\"}', if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], '')), equals(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], null))), concat(', {\"labelName\": \"', replace(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], ''), '\"', ''), '\", \"labelType\": \"User\"}'), ''), if(not(or(empty(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], '')), equals(items('For_Each_Alarm')?['alarm_risk_level'], null))), concat(', {\"labelName\": \"SOCRadar-Severity-', toUpper(replace(coalesce(items('For_Each_Alarm')?['alarm_risk_level'], ''), '\"', '')), '\", \"labelType\": \"User\"}'), ''), ']'))",
                                                                             "runAfter": {
                                                                                 "Map_ClassificationReason": [
                                                                                     "Succeeded"
@@ -1844,7 +1844,7 @@
                                                                                     "AlarmType": "@{coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], 'N/A')}",
                                                                                     "Status": "@{items('For_Each_Alarm')?['status']}",
                                                                                     "Severity": "@{items('For_Each_Alarm')?['alarm_risk_level']}",
-                                                                                    "Message": "Alarm imported to Sentinel",
+                                                                                    "Message": "Alarm imported to Microsoft Sentinel",
                                                                                     "FullAlarmJson": "@items('For_Each_Alarm')"
                                                                                 }
                                                                             ]

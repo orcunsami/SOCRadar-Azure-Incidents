@@ -61,7 +61,7 @@
             "type": "string",
             "defaultValue": "[resourceGroup().name]",
             "metadata": {
-                "description": "Resource group of existing Sentinel workspace. Leave default if workspace is in same RG."
+                "description": "Resource group of the existing Microsoft Sentinel workspace. Leave default if workspace is in same RG."
             }
         },
         "SentinelRoleLevel": {
@@ -72,7 +72,7 @@
                 "Responder"
             ],
             "metadata": {
-                "description": "Sentinel role for Logic App. Responder sufficient for incident ops (least-privilege)."
+                "description": "Microsoft Sentinel role for the Logic App. Responder sufficient for incident ops (least-privilege)."
             }
         }
     },
