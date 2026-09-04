@@ -2830,7 +2830,7 @@
                                                     "actions": {
                                                         "Map_Severity": {
                                                             "type": "Compose",
-                                                            "inputs": "@coalesce(items('For_Each_Incident')?['properties']?['severity'], 'Medium')",
+                                                            "inputs": "@if(equals(items('For_Each_Incident')?['properties']?['severity'], 'High'), 'HIGH', if(equals(items('For_Each_Incident')?['properties']?['severity'], 'Medium'), 'MEDIUM', 'LOW'))",
                                                             "runAfter": {}
                                                         },
                                                         "Update_SOCRadar_Severity": {
