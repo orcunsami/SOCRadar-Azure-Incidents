@@ -170,8 +170,10 @@ def main():
         elif left != right:
             failures.append(f"{label}: differs\n    root:       {str(left)[:200]}\n    standalone: {str(right)[:200]}")
 
-    # Import playbook behaviour that has drifted before.
-    for name in ("Determine_Lookback", "Extract_Existing_IDs", "Calculate_Epoch_Start"):
+    # Import playbook behaviour that has drifted before. Build_Labels is here because the
+    # incident's labels are what the sync playbook reads back, so a one-sided change to it
+    # silently breaks the return path.
+    for name in ("Determine_Lookback", "Extract_Existing_IDs", "Calculate_Epoch_Start", "Build_Labels"):
         compare(name, action_field(root_import, name, "inputs"), action_field(mod_import, name, "inputs"))
 
     # Sync playbook: the write bodies must stay identical on both sides.
