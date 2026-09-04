@@ -525,6 +525,201 @@
             }
         },
         {
+            "condition": "[and(parameters('EnableAlarmsTable'), not(variables('isExternalWorkspace')))]",
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2025-07-01",
+            "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_1')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
+            "properties": {
+                "eTag": "*",
+                "displayName": "SOCRadar Alarm Overview",
+                "category": "Hunting Queries",
+                "query": "SOCRadar_Alarms_CL\n| summarize Count=count() by AlarmMainType, Severity\n| order by Count desc\n",
+                "version": 2,
+                "tags": [
+                    {
+                        "name": "description",
+                        "value": "Overview of SOCRadar alarms imported into Microsoft Sentinel, grouped by type and severity."
+                    },
+                    {
+                        "name": "tactics",
+                        "value": "Discovery"
+                    },
+                    {
+                        "name": "techniques",
+                        "value": "T1526"
+                    },
+                    {
+                        "name": "severity",
+                        "value": "Medium"
+                    },
+                    {
+                        "name": "entityMappings",
+                        "value": "[[{\"entityType\": \"Malware\", \"fieldMappings\": [{\"identifier\": \"Name\", \"columnName\": \"AlarmMainType\"}]}]"
+                    }
+                ]
+            }
+        },
+        {
+            "condition": "[and(parameters('EnableAlarmsTable'), not(variables('isExternalWorkspace')))]",
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2025-07-01",
+            "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_2')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
+            "properties": {
+                "eTag": "*",
+                "displayName": "SOCRadar Critical Alarms",
+                "category": "Hunting Queries",
+                "query": "SOCRadar_Alarms_CL\n| where Severity in (\"HIGH\", \"CRITICAL\")\n| project TimeGenerated, AlarmId, Title, AlarmMainType, AlarmSubType, Severity, Status\n| order by TimeGenerated desc\n",
+                "version": 2,
+                "tags": [
+                    {
+                        "name": "description",
+                        "value": "Hunt for high and critical severity SOCRadar alarms that may require immediate attention."
+                    },
+                    {
+                        "name": "tactics",
+                        "value": "Impact"
+                    },
+                    {
+                        "name": "techniques",
+                        "value": "T1486"
+                    },
+                    {
+                        "name": "severity",
+                        "value": "High"
+                    },
+                    {
+                        "name": "entityMappings",
+                        "value": "[[{\"entityType\": \"Malware\", \"fieldMappings\": [{\"identifier\": \"Name\", \"columnName\": \"AlarmMainType\"}]}]"
+                    }
+                ]
+            }
+        },
+        {
+            "condition": "[and(parameters('EnableAlarmsTable'), not(variables('isExternalWorkspace')))]",
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2025-07-01",
+            "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_3')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
+            "properties": {
+                "eTag": "*",
+                "displayName": "SOCRadar Alarm Trends",
+                "category": "Hunting Queries",
+                "query": "SOCRadar_Alarms_CL\n| where TimeGenerated > ago(7d)\n| summarize Count=count() by bin(TimeGenerated, 1h), AlarmMainType\n| order by TimeGenerated desc\n",
+                "version": 2,
+                "tags": [
+                    {
+                        "name": "description",
+                        "value": "Analyze SOCRadar alarm trends over the past 7 days to identify patterns and spikes."
+                    },
+                    {
+                        "name": "tactics",
+                        "value": "Discovery"
+                    },
+                    {
+                        "name": "techniques",
+                        "value": "T1526"
+                    },
+                    {
+                        "name": "severity",
+                        "value": "Medium"
+                    },
+                    {
+                        "name": "entityMappings",
+                        "value": "[[{\"entityType\": \"Malware\", \"fieldMappings\": [{\"identifier\": \"Name\", \"columnName\": \"AlarmMainType\"}]}]"
+                    }
+                ]
+            }
+        },
+        {
+            "condition": "[not(variables('isExternalWorkspace'))]",
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2025-07-01",
+            "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_4')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
+            "properties": {
+                "eTag": "*",
+                "displayName": "SOCRadar Incident Correlation",
+                "category": "Hunting Queries",
+                "query": "SecurityIncident\n| where Labels has \"SOCRadar\"\n| summarize Count=count() by Status, Classification\n| order by Count desc\n",
+                "version": 2,
+                "tags": [
+                    {
+                        "name": "description",
+                        "value": "Correlate SOCRadar alarms with Microsoft Sentinel incidents to track import status and identify gaps."
+                    },
+                    {
+                        "name": "tactics",
+                        "value": "Discovery"
+                    },
+                    {
+                        "name": "techniques",
+                        "value": "T1526"
+                    },
+                    {
+                        "name": "severity",
+                        "value": "Medium"
+                    },
+                    {
+                        "name": "entityMappings",
+                        "value": "[[{\"entityType\": \"SecurityGroup\", \"fieldMappings\": [{\"identifier\": \"ObjectGuid\", \"columnName\": \"Status\"}]}]"
+                    }
+                ]
+            }
+        },
+        {
+            "condition": "[and(parameters('EnableAuditLogging'), not(variables('isExternalWorkspace')))]",
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2025-07-01",
+            "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_5')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
+                "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
+            ],
+            "properties": {
+                "eTag": "*",
+                "displayName": "SOCRadar Audit Analysis",
+                "category": "Hunting Queries",
+                "query": "SOCRadarAuditLog_CL\n| summarize Count=count() by EventType\n| order by Count desc\n",
+                "version": 2,
+                "tags": [
+                    {
+                        "name": "description",
+                        "value": "Analyze SOCRadar audit logs to monitor import and sync operations."
+                    },
+                    {
+                        "name": "tactics",
+                        "value": "Discovery"
+                    },
+                    {
+                        "name": "techniques",
+                        "value": "T1526"
+                    },
+                    {
+                        "name": "severity",
+                        "value": "Low"
+                    },
+                    {
+                        "name": "entityMappings",
+                        "value": "[[{\"entityType\": \"CloudApplication\", \"fieldMappings\": [{\"identifier\": \"Name\", \"columnName\": \"EventType\"}]}]"
+                    }
+                ]
+            }
+        },
+        {
             "type": "Microsoft.Web/connections",
             "apiVersion": "2016-06-01",
             "name": "[variables('SentinelConnectionName')]",
