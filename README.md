@@ -369,6 +369,21 @@ is derived rather than fixed:
 az storage account list -g <resource-group> --query "[?starts_with(name,'srinc')].name" -o tsv
 ```
 
+If the workspace is in **another** resource group, deleting the integration resource group leaves
+the two role assignments behind at workspace scope with no principal to grant. Azure keeps them,
+and a later install from a different resource group then fails with
+`RoleAssignmentUpdateNotPermitted` -- the assignment name is derived from the workspace, the
+playbook name and the role, so the new identity collides with the orphan. That deployment failure
+is not a clean rollback either: the Logic Apps, storage account and API connections it created
+before the role step are left enabled. Remove the orphans first, or reuse the original resource
+group name:
+
+```bash
+az role assignment list --scope <workspace-resource-id> \
+  --query "[?principalName==null].{name:name,role:roleDefinitionName}" -o table
+az role assignment delete --ids <id>
+```
+
 ## Standalone vs. Microsoft Sentinel Content Hub
 
 This repository is the standalone one-click deployment. It provisions the infrastructure (Data Collection Endpoint, Data Collection Rules, and custom tables) as separate resources alongside the Logic Apps.
