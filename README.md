@@ -212,8 +212,8 @@ What is different in `AlertBacked`:
   The rule keeps a 10-minute ingestion window, so the cap keeps a run under that. A burst that
   still exceeds it gets the rule's default name and Medium severity for that run; the alarm id is
   on the incident's URL entity either way, which is what Sync uses.
-- Incident title `[SOCRadar] #<id> - <title>`; severity CRITICAL/HIGH -> High, MEDIUM -> Medium,
-  LOW -> Low, INFO -> Informational; label `SOCRadar` only.
+- Incident title `[SOCRadar] #<id> - <title>`; severity mapped as in Direct mode (CRITICAL/HIGH ->
+  High, MEDIUM -> Medium, everything else -> Low); label `SOCRadar` only.
 - Closed alarms never become incidents here. With `ImportAllStatuses=true` they still land in
   the table, but the rule only fires on `OPEN`.
 - The IoC entity enrichment reaches these incidents on the next import run, through the same
