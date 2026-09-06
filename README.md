@@ -223,6 +223,9 @@ What is different in `AlertBacked`:
   5-minute interval on purpose, because a late run must not skip rows and a skipped row is never
   retried. The second alert joins the same incident, so an incident normally shows 2 alerts. An
   incident closed inside those 10 minutes comes back once as a new incident; close it again.
+- Verified against a workspace that is not connected to Microsoft Defender XDR. On a connected
+  workspace Defender names the incident: Sync still finds the alarm through the URL entity, but
+  the severity line may be absent, in which case that incident's severity is not written back.
 - Closed alarms never become incidents here. With `ImportAllStatuses=true` they still land in
   the table, but the rule only fires on `OPEN`.
 - The IoC entity enrichment reaches these incidents on the next import run, through the same
