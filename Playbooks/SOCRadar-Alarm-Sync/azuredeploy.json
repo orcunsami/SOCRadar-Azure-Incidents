@@ -45,9 +45,9 @@
         },
         "SyncSeverity": {
             "type": "bool",
-            "defaultValue": false,
+            "defaultValue": true,
             "metadata": {
-                "description": "Push the Microsoft Sentinel incident severity back to SOCRadar when an incident is closed. Off by default: Microsoft Sentinel has no Critical severity, so closing a SOCRadar CRITICAL alarm in Microsoft Sentinel would lower it to High and that cannot be undone. Leave this off unless Microsoft Sentinel is your authority on alarm severity."
+                "description": "Push the Microsoft Sentinel incident severity back to SOCRadar when an incident is closed. On by default. The write only ever raises a severity: Microsoft Sentinel has no Critical, so a SOCRadar CRITICAL alarm is never lowered to High, and an equal or lower Microsoft Sentinel severity is not written. Set to false to never write severity."
             }
         },
         "_triggerStartTime": {
@@ -135,7 +135,7 @@
                         },
                         "SyncSeverity": {
                             "type": "Bool",
-                            "defaultValue": false
+                            "defaultValue": true
                         }
                     },
                     "triggers": {

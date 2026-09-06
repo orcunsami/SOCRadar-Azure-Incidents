@@ -72,7 +72,7 @@ workspace under the misspelled name.
 | `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window and the Sync lookback |
 | `InitialLookbackMinutes` | `600` | Lookback window when there is no checkpoint yet (10 hours) |
 | `ImportAllStatuses` | `false` | `true` imports RESOLVED / FALSE_POSITIVE / MITIGATED too, as already-closed incidents -- see [Importing closed alarms](#importing-closed-alarms) |
-| `SyncSeverity` | `false` | Push the Microsoft Sentinel severity back to SOCRadar on close. Off by default because Microsoft Sentinel has no Critical -- see [Severity write-back](#severity-write-back) |
+| `SyncSeverity` | `true` | Push the Microsoft Sentinel severity back to SOCRadar on close. Raise-only, a severity is never lowered -- see [Severity write-back](#severity-write-back) |
 | `EnableIoCEnrichment` | `true` | Attach IP/domain/URL indicators from the alarm to the incident as entities (see [IoC Entity Enrichment](#ioc-entity-enrichment)) |
 | `EnableAuditLogging` | `true` | Writes audit events to `SOCRadarAuditLog_CL` |
 | `EnableAlarmsTable` | `true` | Stores alarm fields in `SOCRadar_Alarms_CL`. The workbook and four of the five hunting queries need it |
@@ -196,11 +196,11 @@ reported -- and an alarm that landed on `Undetermined` would come back as `RESOL
 ## Severity write-back
 
 Closing an incident always writes the mapped status back to SOCRadar. The **severity** is a
-separate, opt-in write, governed by `SyncSeverity` (default `false`).
+separate write, governed by `SyncSeverity` (default `true`, set `false` to never write it).
 
-It is off by default because the two scales do not line up: Microsoft Sentinel's highest
-severity is High, SOCRadar's is CRITICAL. Closing a CRITICAL alarm in Microsoft Sentinel used to
-push High back and permanently lower the alarm, with no way to undo it.
+The two scales do not line up: Microsoft Sentinel's highest severity is High, SOCRadar's is
+CRITICAL. Closing a CRITICAL alarm in Microsoft Sentinel used to push High back and permanently
+lower the alarm, with no way to undo it. That is why the write is guarded.
 
 With `SyncSeverity=true` the write can only ever raise a severity:
 

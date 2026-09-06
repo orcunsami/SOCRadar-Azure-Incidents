@@ -6,7 +6,7 @@ Sync used to push the Microsoft Sentinel severity back to SOCRadar on every clos
 nothing gating it, so closing a SOCRadar CRITICAL alarm in Microsoft Sentinel lowered it
 to HIGH permanently. Measured live on 2026-09-04: the write succeeds and cannot be undone.
 
-Two layers now stop that: the SyncSeverity parameter (off by default) and, when it is on,
+Two layers now stop that: the SyncSeverity parameter (on by default, can be turned off) and, when it is on,
 a rank comparison that only ever raises a severity. This test pins both, in the one-click
 template and in the standalone playbook, and pins the decision table itself.
 
@@ -94,8 +94,8 @@ def check_sync(template, label, needle=None):
     parameters = workflow["properties"]["definition"].get("parameters", {})
     check("SyncSeverity" in parameters, "%s: workflow parameter SyncSeverity missing" % label)
     if "SyncSeverity" in parameters:
-        check(parameters["SyncSeverity"].get("defaultValue") is False,
-              "%s: workflow SyncSeverity must default to false" % label)
+        check(parameters["SyncSeverity"].get("defaultValue") is True,
+              "%s: workflow SyncSeverity must default to true" % label)
     passed = workflow["properties"].get("parameters", {})
     check(passed.get("SyncSeverity") == {"value": "[parameters('SyncSeverity')]"},
           "%s: SyncSeverity is not passed from the ARM parameter" % label)
@@ -150,8 +150,8 @@ def check_sync(template, label, needle=None):
         check("Log_Severity_Write_Failed" in actions[written].get("else", {}).get("actions", {}),
               "%s: a rejected severity write is not recorded" % label)
 
-    check(template["parameters"]["SyncSeverity"]["defaultValue"] is False,
-          "%s: the ARM parameter SyncSeverity must default to false" % label)
+    check(template["parameters"]["SyncSeverity"]["defaultValue"] is True,
+          "%s: the ARM parameter SyncSeverity must default to true" % label)
     description = template["parameters"]["SyncSeverity"]["metadata"]["description"]
     check("Microsoft Sentinel" in description and "Critical" in description,
           "%s: the SyncSeverity description must explain the Critical limitation" % label)
