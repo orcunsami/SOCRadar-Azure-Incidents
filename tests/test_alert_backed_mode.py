@@ -204,10 +204,12 @@ if root_nested:
             check(len(placeholders) <= 3, f"{field} may use at most 3 placeholders (platform limit)")
         check(override.get("alertSeverityColumnName") == "SentinelSeverity",
               "alert severity must come from the SentinelSeverity column")
-        for level, mapped in (("CRITICAL", "High"), ("HIGH", "High"), ("MEDIUM", "Medium"), ("LOW", "Low")):
+        for level, mapped in (("CRITICAL", "High"), ("HIGH", "High"), ("MEDIUM", "Medium")):
             check(f'"{level}"' in query and f'"{mapped}"' in query,
                   f"severity mapping {level}->{mapped} missing from the rule query")
-        check('"Informational"' in query, "INFO alarms must map to Informational, not fall to Low")
+        check('"Medium", "Low")' in query and "Informational" not in query,
+              "everything below MEDIUM, INFO included, must become Low: the same mapping Direct mode uses "
+              "and the only one Sync's severity rank table knows")
 
         details = props.get("customDetails", {})
         check(0 < len(details) <= 20, "custom details must be 1..20 keys (platform limit)")
