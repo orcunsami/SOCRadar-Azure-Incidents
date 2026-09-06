@@ -131,6 +131,35 @@ def m_sync_skips_resolver(t):
     find(actions, "Check_If_Closed_And_Not_Synced")["runAfter"] = {"Check_Has_Synced_Tag": ["Succeeded"]}
 
 
+def m_rule_description_plain(t):
+    r, _ = rule(t)
+    r["properties"]["alertDetailsOverride"]["alertDescriptionFormat"] = "{{AlarmText}}"
+
+
+def m_rule_marker_renamed(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("SOCRadar severity: ", "Severity: ")
+
+
+def m_rank_reads_labels_only(t):
+    actions = workflow(t, "sync")["properties"]["definition"]["actions"]
+    rank = find(actions, "Rank_SOCRadar_Severity")
+    rank["inputs"] = rank["inputs"].replace("Resolve_SOCRadar_Severity", "Extract_SOCRadar_Severity")
+
+
+def m_description_skips_critical(t):
+    actions = workflow(t, "sync")["properties"]["definition"]["actions"]
+    reader = find(actions, "Severity_From_Description")
+    reader["inputs"] = reader["inputs"].replace("'SOCRadar severity: CRITICAL'), 'CRITICAL'", "'SOCRadar severity: CRITICAL'), 'HIGH'")
+
+
+def m_resolve_prefers_description(t):
+    actions = workflow(t, "sync")["properties"]["definition"]["actions"]
+    find(actions, "Resolve_SOCRadar_Severity")["inputs"] = (
+        "@if(empty(outputs('Severity_From_Description')), outputs('Extract_SOCRadar_Severity'), "
+        "outputs('Severity_From_Description'))")
+
+
 def m_sync_reads_any_url(t):
     actions = workflow(t, "sync")["properties"]["definition"]["actions"]
     find(actions, "Filter_Alarm_Url_Entities")["inputs"]["where"] = "@equals(item()?['kind'], 'Url')"
@@ -154,6 +183,11 @@ MUTATIONS = [
     ("Sync sends unresolved id", (ROOT, SYNC), m_sync_reads_unresolved_id),
     ("Sync skips the resolver", (ROOT, SYNC), m_sync_skips_resolver),
     ("Sync reads any URL entity", (ROOT, SYNC), m_sync_reads_any_url),
+    ("rule description drops the marker", (ROOT, IMPORT), m_rule_description_plain),
+    ("rule marker text renamed", (ROOT, IMPORT), m_rule_marker_renamed),
+    ("rank reads labels only", (ROOT, SYNC), m_rank_reads_labels_only),
+    ("description reader maps CRITICAL wrong", (ROOT, SYNC), m_description_skips_critical),
+    ("resolver prefers description", (ROOT, SYNC), m_resolve_prefers_description),
 ]
 
 

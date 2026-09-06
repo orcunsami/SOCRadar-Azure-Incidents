@@ -496,14 +496,32 @@
                                                     "runAfter": {},
                                                     "inputs": "@if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-CRITICAL'), 'CRITICAL', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-HIGH'), 'HIGH', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-MEDIUM'), 'MEDIUM', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-LOW'), 'LOW', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['labels'], json('[]'))), 'SOCRadar-Severity-INFO'), 'INFO', '')))))"
                                                 },
-                                                "Rank_SOCRadar_Severity": {
+                                                "Severity_From_Description": {
                                                     "type": "Compose",
+                                                    "inputs": "@if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['description'], '')), 'SOCRadar severity: CRITICAL'), 'CRITICAL', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['description'], '')), 'SOCRadar severity: HIGH'), 'HIGH', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['description'], '')), 'SOCRadar severity: MEDIUM'), 'MEDIUM', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['description'], '')), 'SOCRadar severity: LOW'), 'LOW', if(contains(string(coalesce(items('For_Each_Incident')?['properties']?['description'], '')), 'SOCRadar severity: INFO'), 'INFO', '')))))",
                                                     "runAfter": {
                                                         "Extract_SOCRadar_Severity": [
                                                             "Succeeded"
                                                         ]
+                                                    }
+                                                },
+                                                "Resolve_SOCRadar_Severity": {
+                                                    "type": "Compose",
+                                                    "inputs": "@if(empty(outputs('Extract_SOCRadar_Severity')), outputs('Severity_From_Description'), outputs('Extract_SOCRadar_Severity'))",
+                                                    "runAfter": {
+                                                        "Severity_From_Description": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                },
+                                                "Rank_SOCRadar_Severity": {
+                                                    "type": "Compose",
+                                                    "runAfter": {
+                                                        "Resolve_SOCRadar_Severity": [
+                                                            "Succeeded"
+                                                        ]
                                                     },
-                                                    "inputs": "@if(equals(outputs('Extract_SOCRadar_Severity'), 'CRITICAL'), 5, if(equals(outputs('Extract_SOCRadar_Severity'), 'HIGH'), 4, if(equals(outputs('Extract_SOCRadar_Severity'), 'MEDIUM'), 3, if(equals(outputs('Extract_SOCRadar_Severity'), 'LOW'), 2, if(equals(outputs('Extract_SOCRadar_Severity'), 'INFO'), 1, 0)))))"
+                                                    "inputs": "@if(equals(outputs('Resolve_SOCRadar_Severity'), 'CRITICAL'), 5, if(equals(outputs('Resolve_SOCRadar_Severity'), 'HIGH'), 4, if(equals(outputs('Resolve_SOCRadar_Severity'), 'MEDIUM'), 3, if(equals(outputs('Resolve_SOCRadar_Severity'), 'LOW'), 2, if(equals(outputs('Resolve_SOCRadar_Severity'), 'INFO'), 1, 0)))))"
                                                 },
                                                 "Rank_Sentinel_Severity": {
                                                     "type": "Compose",

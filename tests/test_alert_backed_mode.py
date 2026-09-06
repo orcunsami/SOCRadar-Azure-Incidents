@@ -31,6 +31,9 @@ failures = []
 checks = 0
 
 
+SEVERITY_MARK = "SOCRadar severity: "
+
+
 def check(condition, message):
     global checks
     checks += 1
@@ -204,6 +207,16 @@ if root_nested:
             check(len(placeholders) <= 3, f"{field} may use at most 3 placeholders (platform limit)")
         check(override.get("alertSeverityColumnName") == "SentinelSeverity",
               "alert severity must come from the SentinelSeverity column")
+        # The SOCRadar level rides in the alert description (the incident inherits it): it is the
+        # only channel Sync can read without new credentials, and the label is not there.
+        check(override.get("alertDescriptionFormat") == "{{AlarmDescription}}",
+              "alert description must be the composed AlarmDescription column")
+        extend = re.search(r"\| extend AlarmDescription = ([^\n]+)", query)
+        check(extend is not None and "substring(AlarmText, 0, 1500)" in extend.group(1)
+              and f'"\\n\\n{SEVERITY_MARK}"' in extend.group(1) and "toupper(Severity)" in extend.group(1),
+              "AlarmDescription must be substring(AlarmText, 0, 1500) + newline + 'SOCRadar severity: ' + toupper(Severity)")
+        check(extend is not None and query.index("| extend AlarmDescription") < query.index("| project "),
+              "AlarmDescription must be derived before the projection")
         for level, mapped in (("CRITICAL", "High"), ("HIGH", "High"), ("MEDIUM", "Medium")):
             check(f'"{level}"' in query and f'"{mapped}"' in query,
                   f"severity mapping {level}->{mapped} missing from the rule query")
@@ -238,7 +251,7 @@ if root_nested:
         declared = set()
         for stream in dcr["properties"]["streamDeclarations"].values():
             declared |= {c["name"] for c in stream["columns"]}
-        derived = {"AlarmUrl", "SentinelSeverity"}
+        derived = {"AlarmUrl", "SentinelSeverity", "AlarmDescription"}
         missing = columns - declared - derived
         check(not missing, f"rule query projects columns the alarms table does not have: {sorted(missing)}")
         check(set(details.values()) <= columns, "every custom detail must be a projected column")
@@ -422,6 +435,37 @@ for path, template in ((ROOT, root), (SYNC, sync_pb)):
         _, body = by_name(actions, name)
         check(body and "outputs('Resolve_Alarm_ID')" in json.dumps(body["inputs"].get("body")),
               f"{label}: {name} must send the resolved alarm id")
+
+    # Severity: the label reader stays first; when it is empty the level comes from the
+    # description the alert-backed rule wrote. The rank reads the resolved value only.
+    _, from_desc = by_name(actions, "Severity_From_Description")
+    check(from_desc is not None and "?['properties']?['description']" in from_desc["inputs"],
+          f"{label}: Severity_From_Description must read the incident description")
+    for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+        check(from_desc is not None and f"'{SEVERITY_MARK}{level}'), '{level}'" in from_desc["inputs"],
+              f"{label}: Severity_From_Description must map '{SEVERITY_MARK}{level}' to {level}")
+    check(from_desc is not None and from_desc["inputs"].rstrip().endswith(", '')))))"),
+          f"{label}: Severity_From_Description must fall back to '' (unknown -> rank 0)")
+    check(from_desc is not None and from_desc["runAfter"] == {"Extract_SOCRadar_Severity": ["Succeeded"]},
+          f"{label}: Severity_From_Description must follow the label reader")
+    _, resolve_sev = by_name(actions, "Resolve_SOCRadar_Severity")
+    check(resolve_sev is not None and resolve_sev["inputs"] ==
+          "@if(empty(outputs('Extract_SOCRadar_Severity')), outputs('Severity_From_Description'), "
+          "outputs('Extract_SOCRadar_Severity'))",
+          f"{label}: Resolve_SOCRadar_Severity must prefer the label and fall back to the description")
+    check(resolve_sev is not None and resolve_sev["runAfter"] == {"Severity_From_Description": ["Succeeded"]},
+          f"{label}: Resolve_SOCRadar_Severity must follow Severity_From_Description")
+    _, rank = by_name(actions, "Rank_SOCRadar_Severity")
+    check(rank is not None and rank["inputs"].count("outputs('Resolve_SOCRadar_Severity')") == 5
+          and "outputs('Extract_SOCRadar_Severity')" not in rank["inputs"],
+          f"{label}: Rank_SOCRadar_Severity must rank the resolved severity, not the label alone")
+    check(rank is not None and rank["runAfter"] == {"Resolve_SOCRadar_Severity": ["Succeeded"]},
+          f"{label}: Rank_SOCRadar_Severity must follow Resolve_SOCRadar_Severity")
+    # One marker, two writers (rule query and Sync reader): they must agree (EXP-AZURE-0178).
+    rule_query = next(r for r in nested_rule(root)["properties"]["template"]["resources"]
+                      if r["type"].endswith("/alertRules"))["properties"]["query"]
+    check(SEVERITY_MARK in rule_query and from_desc is not None and SEVERITY_MARK in from_desc["inputs"],
+          f"{label}: the severity marker text must be identical in the rule query and in Sync")
 
 check(json.dumps(workflow(root, "sync")["properties"]["definition"], sort_keys=True)
       == json.dumps(workflow(sync_pb, "sync")["properties"]["definition"], sort_keys=True),
