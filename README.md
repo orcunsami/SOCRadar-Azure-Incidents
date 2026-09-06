@@ -72,10 +72,11 @@ workspace under the misspelled name.
 | `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window and the Sync lookback |
 | `InitialLookbackMinutes` | `600` | Lookback window when there is no checkpoint yet (10 hours) |
 | `ImportAllStatuses` | `false` | `true` imports RESOLVED / FALSE_POSITIVE / MITIGATED too, as already-closed incidents -- see [Importing closed alarms](#importing-closed-alarms) |
+| `IncidentMode` | `Direct` | `Direct` creates the incidents from the import Logic App. `AlertBacked` writes the alarms to `SOCRadar_Alarms_CL` and a scheduled analytics rule raises one alert and one incident per alarm, which is what makes them show up in the Microsoft Defender portal -- see [Incident mode](#incident-mode) |
 | `SyncSeverity` | `true` | Push the Microsoft Sentinel severity back to SOCRadar on close. Raise-only, a severity is never lowered -- see [Severity write-back](#severity-write-back) |
 | `EnableIoCEnrichment` | `true` | Attach IP/domain/URL indicators from the alarm to the incident as entities (see [IoC Entity Enrichment](#ioc-entity-enrichment)) |
 | `EnableAuditLogging` | `true` | Writes audit events to `SOCRadarAuditLog_CL` |
-| `EnableAlarmsTable` | `true` | Stores alarm fields in `SOCRadar_Alarms_CL`. The workbook and four of the five hunting queries need it |
+| `EnableAlarmsTable` | `true` | Stores alarm fields in `SOCRadar_Alarms_CL`. The workbook and four of the five hunting queries need it. Forced on by `IncidentMode=AlertBacked` |
 | `EnableWorkbook` | `true` | Deploys the SOCRadar Dashboard workbook. Needs `EnableAlarmsTable=true` -- with the table off, the workbook is skipped even when this is `true` |
 | `TableRetentionDays` | `365` | Retention for custom tables (30-730) |
 
@@ -105,6 +106,11 @@ after the resource group and workspace, so an upgrade in place reuses the same a
 the checkpoint; a deployment into a *different* resource group starts with an empty one and the
 first run falls back to `InitialLookbackMinutes`. Either way the de-duplication snapshot stops
 that from re-importing anything.
+
+Upgrading from v1.0.0 also turns the severity write-back back on: `SyncSeverity` now defaults
+to `true`, which restores v1.0.0's always-write behaviour with one difference, the raise-only
+guard, so a SOCRadar CRITICAL alarm is never lowered to High. Pass `SyncSeverity=false` on the
+upgrade if you had turned it off.
 
 ## What Gets Deployed
 
@@ -144,8 +150,12 @@ are a contract, not decoration.
 Incidents imported as already closed carry a sixth label, `Synced` -- see
 [Importing closed alarms](#importing-closed-alarms).
 
-Sync reads the alarm id from `SOCRadar-Alarm-<id>` and falls back to parsing it out of the
-incident title, so incidents created before these labels existed still sync. The obvious field
+In `AlertBacked` mode the incidents carry only `SOCRadar`; an automation rule cannot set per-alarm
+labels. The alarm id is on the incident's URL entity instead -- see [Incident mode](#incident-mode).
+
+Sync reads the alarm id from `SOCRadar-Alarm-<id>`, falls back to parsing it out of the
+incident title, and last to the incident's URL entity (`.../alarm/<id>`), so incidents created
+before these labels existed, and alert-backed incidents, still sync. The obvious field
 for this, `providerIncidentId`, cannot be used: Azure overwrites both it and `providerName` on
 any incident created through the API, silently and without an error.
 
@@ -173,6 +183,47 @@ already there, which is what makes a widened window harmless.
 Earlier versions derived the window from the newest existing incident's title. That coupled the
 window to the incident list, so a workspace whose incidents had been cleaned up would re-import
 from scratch.
+
+## Incident mode
+
+`IncidentMode` decides who creates the incident.
+
+**`Direct`** (default) is what the sections above describe: the import Logic App creates one
+incident per alarm through the Microsoft Sentinel API. Those incidents never appear in the
+Microsoft Defender portal's unified queue, which only lists incidents backed by an alert.
+
+**`AlertBacked`** makes the import write each alarm to `SOCRadar_Alarms_CL` and nothing else. A
+scheduled analytics rule (`SOCRadar alarm`, every 5 minutes, deployed with this mode) raises one
+alert per row, and Microsoft Sentinel -- or Microsoft Defender XDR, when the workspace is
+onboarded to it -- creates the incident. An automation rule adds the `SOCRadar` label so Sync
+finds them.
+
+What is different in `AlertBacked`:
+
+- The alarms table is deployed whatever `EnableAlarmsTable` says, and the workspace has to be in
+  the deployment resource group: the table is never created cross-RG and the rule fails to
+  deploy without it.
+- De-duplication is an `alarm-<id>` row per ingested alarm in the checkpoint table, not the
+  incident list. The rows stay (one per alarm ever ingested) and cost next to nothing.
+- The import writes at most `48 / (10 / PollingIntervalMinutes + 1)` new alarms per run (16 at
+  the default 5 minutes) and holds the checkpoint when it hits that cap, so a backlog drains
+  over the following runs instead of landing in one rule run. The reason is a platform limit:
+  a rule run that sees more than 50 distinct values drops every customised title and severity.
+  The rule keeps a 10-minute ingestion window, so the cap keeps a run under that. A burst that
+  still exceeds it gets the rule's default name and Medium severity for that run; the alarm id is
+  on the incident's URL entity either way, which is what Sync uses.
+- Incident title `[SOCRadar] #<id> - <title>`; severity CRITICAL/HIGH -> High, MEDIUM -> Medium,
+  LOW -> Low, INFO -> Informational; label `SOCRadar` only.
+- Closed alarms never become incidents here. With `ImportAllStatuses=true` they still land in
+  the table, but the rule only fires on `OPEN`.
+- The IoC entity enrichment reaches these incidents on the next import run, through the same
+  title match it uses for Direct incidents.
+- `PollingIntervalMinutes` below 5 lowers the per-run cap (4 at 1 minute) rather than the
+  rule interval, which cannot go below 5.
+
+Switching an existing install from `Direct` to `AlertBacked` re-ingests the current import
+window once, and every alarm in it gets a second, rule-created incident; close the old ones.
+Switching back does the same in reverse.
 
 ## Importing closed alarms
 
@@ -276,6 +327,9 @@ for existing separated deployments:
 - If you enable the custom tables but leave `AlarmsDcrResourceId` / `AuditDcrResourceId` empty,
   the deployment still succeeds while every ingestion call returns 403 and the tables stay
   silently empty.
+- `IncidentMode=AlertBacked` works here too, but the analytics rule it deploys needs
+  `SOCRadar_Alarms_CL` to exist already: deploy `SOCRadar-Alarms-Infrastructure` first and pass
+  its outputs, as below.
 
 If you still deploy them separately, deploy the infrastructure templates first and pass their
 DCR resource ID outputs into the import playbook:
@@ -351,7 +405,9 @@ Import**, then select the files. The first two need `EnableAlarmsTable=true`.
   `EnableAuditLogging` and `EnableAlarmsTable` are forced off inside the import Logic App to
   match, so nothing tries to ingest into a table that was never created -- you get no silent 403s, and no
   analytics. The Microsoft Sentinel onboarding state is also skipped, so the workspace must
-  already be onboarded.
+  already be onboarded. `IncidentMode=AlertBacked` is not available cross-RG for the same
+  reason: the alarms table it needs is never created there and the deployment fails at the
+  analytics rule.
 - `DeployNewWorkspace` only works in the deployment resource group -- a workspace cannot be
   created in another RG from this template.
 
