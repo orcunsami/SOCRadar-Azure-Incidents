@@ -264,6 +264,33 @@ def main():
                 f"{label} sync playbook ({placed[0]})"
             )
 
+    # Alert-backed mode (task_azure_0051): the sequential loop, its mode gate, the checkpoint
+    # hold and the Sync entity reader are one behaviour in two hand-maintained copies.
+    compare("Check_If_Should_Import", action_field(root_import, "Check_If_Should_Import", "expression"),
+            action_field(mod_import, "Check_If_Should_Import", "expression"))
+    for field in ("actions", "runtimeConfiguration", "foreach", "runAfter"):
+        compare("For_Each_Alarm_AlertBacked " + field,
+                action_field(root_import, "For_Each_Alarm_AlertBacked", field),
+                action_field(mod_import, "For_Each_Alarm_AlertBacked", field))
+    compare("Verify_Import_Complete", action_field(root_import, "Verify_Import_Complete", "expression"),
+            action_field(mod_import, "Verify_Import_Complete", "expression"))
+    compare("Fail_Incomplete_Import", action_field(root_import, "Fail_Incomplete_Import", "inputs"),
+            action_field(mod_import, "Fail_Incomplete_Import", "inputs"))
+    compare("Check_Needs_Entity_Lookup", action_field(root_sync, "Check_Needs_Entity_Lookup", "expression"),
+            action_field(mod_sync, "Check_Needs_Entity_Lookup", "expression"))
+    for name in ("Get_Incident_Entities", "Filter_Alarm_Url_Entities", "Alarm_ID_From_Entities", "Resolve_Alarm_ID"):
+        compare(name, action_field(root_sync, name, "inputs"), action_field(mod_sync, name, "inputs"))
+    compare("Check_If_Closed_And_Not_Synced runAfter", run_after(root_sync, "Check_If_Closed_And_Not_Synced"),
+            run_after(mod_sync, "Check_If_Closed_And_Not_Synced"))
+
+    # The analytics rule and its automation rule live in a nested template in both copies.
+    def nested_rule(template):
+        for resource in template.get("resources", []):
+            if resource.get("name") == "deploy-alert-backed-rule":
+                return json.dumps(resource["properties"]["template"], sort_keys=True)
+        return None
+    compare("deploy-alert-backed-rule template", nested_rule(root), nested_rule(load(IMPORT)))
+
     # The audit row's own fields: standalone once logged the alarm id into IncidentId,
     # losing the Sentinel incident name the shipped KQL projects.
     compare("Log_Audit_Event body", request_body(root_import, "Log_Audit_Event"),

@@ -59,6 +59,17 @@
                 "description": "Import all alarm statuses including resolved/closed. Default: only OPEN alarms"
             }
         },
+        "IncidentMode": {
+            "type": "string",
+            "defaultValue": "Direct",
+            "allowedValues": [
+                "Direct",
+                "AlertBacked"
+            ],
+            "metadata": {
+                "description": "Direct: the import Logic App creates one Microsoft Sentinel incident per SOCRadar alarm (current behaviour). AlertBacked: the import writes alarms to the SOCRadar_Alarms_CL table and a scheduled analytics rule raises one alert and one incident per alarm, so the incidents also appear in the Microsoft Defender portal. AlertBacked needs the workspace in this resource group; the alarms table is deployed with it."
+            }
+        },
         "EnableAuditLogging": {
             "type": "bool",
             "defaultValue": false,
@@ -170,7 +181,10 @@
         "checkpointStorageAccountName": "[take(concat('srinc', uniqueString(resourceGroup().id, parameters('WorkspaceName'))), 24)]",
         "checkpointTableName": "ImportState",
         "checkpointTableUrl": "[concat('https://', variables('checkpointStorageAccountName'), '.table.', environment().suffixes.storage, '/', variables('checkpointTableName'))]",
-        "StorageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3"
+        "StorageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+        "alarmsTableEnabled": "[or(parameters('EnableAlarmsTable'), equals(parameters('IncidentMode'), 'AlertBacked'))]",
+        "alertBackedRuleId": "[guid(variables('workspaceResourceId'), 'socradar-alert-backed-rule')]",
+        "alertBackedAutomationRuleId": "[guid(variables('workspaceResourceId'), 'socradar-alert-backed-automation-rule')]"
     },
     "resources": [
         {
@@ -324,6 +338,14 @@
                         },
                         "CheckpointTableUrl": {
                             "type": "String"
+                        },
+                        "IncidentMode": {
+                            "type": "String",
+                            "defaultValue": "Direct"
+                        },
+                        "AlertBackedMaxNewPerRun": {
+                            "type": "Int",
+                            "defaultValue": 16
                         }
                     },
                     "triggers": {
@@ -562,6 +584,57 @@
                                 ]
                             }
                         },
+                        "Initialize_New_Alarms": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "new_alarms",
+                                        "type": "integer",
+                                        "value": 0
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Initialize_Pages_Read": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Initialize_Capped": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "capped",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Initialize_New_Alarms": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Initialize_Marker_Read_Failed": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "marker_read_failed",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Initialize_Capped": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
                         "Pagination_Loop": {
                             "type": "Until",
                             "expression": "@greater(variables('page'), variables('total_pages'))",
@@ -704,17 +777,27 @@
                                         "Check_If_Should_Import": {
                                             "type": "If",
                                             "expression": {
-                                                "or": [
+                                                "and": [
                                                     {
-                                                        "equals": [
-                                                            "@parameters('ImportAllStatuses')",
-                                                            true
+                                                        "or": [
+                                                            {
+                                                                "equals": [
+                                                                    "@parameters('ImportAllStatuses')",
+                                                                    true
+                                                                ]
+                                                            },
+                                                            {
+                                                                "equals": [
+                                                                    "@coalesce(items('For_Each_Alarm')?['status'], 'OPEN')",
+                                                                    "OPEN"
+                                                                ]
+                                                            }
                                                         ]
                                                     },
                                                     {
                                                         "equals": [
-                                                            "@coalesce(items('For_Each_Alarm')?['status'], 'OPEN')",
-                                                            "OPEN"
+                                                            "@parameters('IncidentMode')",
+                                                            "Direct"
                                                         ]
                                                     }
                                                 ]
@@ -1405,6 +1488,317 @@
                                         ]
                                     }
                                 },
+                                "For_Each_Alarm_AlertBacked": {
+                                    "type": "Foreach",
+                                    "foreach": "@coalesce(body('Parse_Page_Response')?['data']?['alarms'], json('[]'))",
+                                    "actions": {
+                                        "Check_AlertBacked_Should_Import": {
+                                            "type": "If",
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "equals": [
+                                                            "@parameters('IncidentMode')",
+                                                            "AlertBacked"
+                                                        ]
+                                                    },
+                                                    {
+                                                        "or": [
+                                                            {
+                                                                "equals": [
+                                                                    "@parameters('ImportAllStatuses')",
+                                                                    true
+                                                                ]
+                                                            },
+                                                            {
+                                                                "equals": [
+                                                                    "@coalesce(items('For_Each_Alarm_AlertBacked')?['status'], 'OPEN')",
+                                                                    "OPEN"
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        "equals": [
+                                                            "@variables('capped')",
+                                                            false
+                                                        ]
+                                                    },
+                                                    {
+                                                        "equals": [
+                                                            "@variables('marker_read_failed')",
+                                                            false
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "actions": {
+                                                "Read_Seen_Marker": {
+                                                    "type": "Http",
+                                                    "inputs": {
+                                                        "method": "GET",
+                                                        "uri": "@{parameters('CheckpointTableUrl')}(PartitionKey='@{parameters('CompanyId')}',RowKey='alarm-@{string(items('For_Each_Alarm_AlertBacked')?['alarm_id'])}')",
+                                                        "headers": {
+                                                            "Accept": "application/json;odata=nometadata",
+                                                            "x-ms-version": "2020-12-06"
+                                                        },
+                                                        "authentication": {
+                                                            "type": "ManagedServiceIdentity",
+                                                            "audience": "https://storage.azure.com"
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 3,
+                                                            "interval": "PT5S",
+                                                            "maximumInterval": "PT1M"
+                                                        }
+                                                    },
+                                                    "runAfter": {}
+                                                },
+                                                "Check_Marker_Read": {
+                                                    "type": "If",
+                                                    "expression": {
+                                                        "or": [
+                                                            {
+                                                                "equals": [
+                                                                    "@outputs('Read_Seen_Marker')?['statusCode']",
+                                                                    200
+                                                                ]
+                                                            },
+                                                            {
+                                                                "equals": [
+                                                                    "@outputs('Read_Seen_Marker')?['statusCode']",
+                                                                    404
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "actions": {
+                                                        "Check_Alarm_Is_New": {
+                                                            "type": "If",
+                                                            "expression": {
+                                                                "and": [
+                                                                    {
+                                                                        "equals": [
+                                                                            "@outputs('Read_Seen_Marker')?['statusCode']",
+                                                                            404
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "actions": {
+                                                                "Ingest_Alarm_Row": {
+                                                                    "type": "Http",
+                                                                    "inputs": {
+                                                                        "method": "POST",
+                                                                        "uri": "@{concat(parameters('DceEndpoint'), '/dataCollectionRules/', parameters('AlarmsDcrImmutableId'), '/streams/', parameters('AlarmsStreamName'), '?api-version=2023-01-01')}",
+                                                                        "headers": {
+                                                                            "Content-Type": "application/json"
+                                                                        },
+                                                                        "authentication": {
+                                                                            "type": "ManagedServiceIdentity",
+                                                                            "audience": "https://monitor.azure.com"
+                                                                        },
+                                                                        "body": [
+                                                                            {
+                                                                                "TimeGenerated": "@{utcNow()}",
+                                                                                "AlarmId": "@{string(items('For_Each_Alarm_AlertBacked')?['alarm_id'])}",
+                                                                                "CompanyId": "@{parameters('CompanyId')}",
+                                                                                "AlarmMainType": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_type_details']?['alarm_main_type'], 'Unknown')}",
+                                                                                "AlarmSubType": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_type_details']?['alarm_sub_type'], 'Unknown')}",
+                                                                                "Severity": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_risk_level'], 'MEDIUM')}",
+                                                                                "Status": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['status'], 'OPEN')}",
+                                                                                "Title": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_type_details']?['alarm_generic_title'], 'SOCRadar Alarm')}",
+                                                                                "AlarmText": "@{take(coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_text'], ''), 4000)}",
+                                                                                "AlarmDate": "@{items('For_Each_Alarm_AlertBacked')?['date']}",
+                                                                                "AlarmPayload": "@items('For_Each_Alarm_AlertBacked')"
+                                                                            }
+                                                                        ],
+                                                                        "retryPolicy": {
+                                                                            "type": "exponential",
+                                                                            "count": 3,
+                                                                            "interval": "PT10S",
+                                                                            "maximumInterval": "PT1M"
+                                                                        }
+                                                                    },
+                                                                    "runAfter": {}
+                                                                },
+                                                                "Write_Seen_Marker": {
+                                                                    "type": "Http",
+                                                                    "inputs": {
+                                                                        "method": "PUT",
+                                                                        "uri": "@{parameters('CheckpointTableUrl')}(PartitionKey='@{parameters('CompanyId')}',RowKey='alarm-@{string(items('For_Each_Alarm_AlertBacked')?['alarm_id'])}')",
+                                                                        "headers": {
+                                                                            "Content-Type": "application/json;odata=noop",
+                                                                            "Accept": "application/json;odata=noop",
+                                                                            "x-ms-version": "2020-12-06"
+                                                                        },
+                                                                        "authentication": {
+                                                                            "type": "ManagedServiceIdentity",
+                                                                            "audience": "https://storage.azure.com"
+                                                                        },
+                                                                        "body": {
+                                                                            "PartitionKey": "@{parameters('CompanyId')}",
+                                                                            "RowKey": "alarm-@{string(items('For_Each_Alarm_AlertBacked')?['alarm_id'])}",
+                                                                            "AlarmDate": "@{string(coalesce(items('For_Each_Alarm_AlertBacked')?['date'], ''))}",
+                                                                            "Severity": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_risk_level'], '')}",
+                                                                            "Status": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['status'], '')}",
+                                                                            "IngestedUtc": "@{utcNow()}"
+                                                                        },
+                                                                        "retryPolicy": {
+                                                                            "type": "exponential",
+                                                                            "count": 3,
+                                                                            "interval": "PT5S",
+                                                                            "maximumInterval": "PT1M"
+                                                                        }
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "Ingest_Alarm_Row": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "Increment_New_Alarms": {
+                                                                    "type": "IncrementVariable",
+                                                                    "inputs": {
+                                                                        "name": "new_alarms",
+                                                                        "value": 1
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "Write_Seen_Marker": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "Check_Cap_Reached": {
+                                                                    "type": "If",
+                                                                    "expression": {
+                                                                        "and": [
+                                                                            {
+                                                                                "greaterOrEquals": [
+                                                                                    "@variables('new_alarms')",
+                                                                                    "@parameters('AlertBackedMaxNewPerRun')"
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "actions": {
+                                                                        "Set_Capped": {
+                                                                            "type": "SetVariable",
+                                                                            "inputs": {
+                                                                                "name": "capped",
+                                                                                "value": true
+                                                                            },
+                                                                            "runAfter": {}
+                                                                        }
+                                                                    },
+                                                                    "else": {
+                                                                        "actions": {}
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "Increment_New_Alarms": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "Check_Audit_Enabled_AlertBacked": {
+                                                                    "type": "If",
+                                                                    "expression": {
+                                                                        "and": [
+                                                                            {
+                                                                                "equals": [
+                                                                                    "@parameters('EnableAuditLogging')",
+                                                                                    true
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "actions": {
+                                                                        "Log_Alarm_Ingested_Event": {
+                                                                            "type": "Http",
+                                                                            "inputs": {
+                                                                                "method": "POST",
+                                                                                "uri": "@{concat(parameters('AuditDcrEndpoint'), '/dataCollectionRules/', parameters('AuditDcrImmutableId'), '/streams/', parameters('AuditStreamName'), '?api-version=2023-01-01')}",
+                                                                                "headers": {
+                                                                                    "Content-Type": "application/json"
+                                                                                },
+                                                                                "authentication": {
+                                                                                    "type": "ManagedServiceIdentity",
+                                                                                    "audience": "https://monitor.azure.com"
+                                                                                },
+                                                                                "body": [
+                                                                                    {
+                                                                                        "TimeGenerated": "@{utcNow()}",
+                                                                                        "EventType": "AlarmIngested",
+                                                                                        "AlarmId": "@{items('For_Each_Alarm_AlertBacked')?['alarm_id']}",
+                                                                                        "IncidentId": "",
+                                                                                        "AlarmType": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_type_details']?['alarm_main_type'], 'N/A')}",
+                                                                                        "Status": "@{items('For_Each_Alarm_AlertBacked')?['status']}",
+                                                                                        "Severity": "@{items('For_Each_Alarm_AlertBacked')?['alarm_risk_level']}",
+                                                                                        "Message": "Alarm written to the alarms table for the alert-backed analytics rule",
+                                                                                        "FullAlarmJson": "@items('For_Each_Alarm_AlertBacked')"
+                                                                                    }
+                                                                                ]
+                                                                            },
+                                                                            "runAfter": {}
+                                                                        }
+                                                                    },
+                                                                    "else": {
+                                                                        "actions": {}
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "Write_Seen_Marker": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "else": {
+                                                                "actions": {}
+                                                            },
+                                                            "runAfter": {}
+                                                        }
+                                                    },
+                                                    "else": {
+                                                        "actions": {
+                                                            "Flag_Marker_Read_Failed": {
+                                                                "type": "SetVariable",
+                                                                "inputs": {
+                                                                    "name": "marker_read_failed",
+                                                                    "value": true
+                                                                },
+                                                                "runAfter": {}
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Read_Seen_Marker": [
+                                                            "Succeeded",
+                                                            "Failed"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "else": {
+                                                "actions": {}
+                                            },
+                                            "runAfter": {}
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "For_Each_Alarm": [
+                                            "Succeeded",
+                                            "Failed",
+                                            "Skipped",
+                                            "TimedOut"
+                                        ]
+                                    },
+                                    "runtimeConfiguration": {
+                                        "concurrency": {
+                                            "repetitions": 1
+                                        }
+                                    }
+                                },
                                 "Increment_Page": {
                                     "type": "IncrementVariable",
                                     "inputs": {
@@ -1412,7 +1806,7 @@
                                         "value": 1
                                     },
                                     "runAfter": {
-                                        "For_Each_Alarm": [
+                                        "For_Each_Alarm_AlertBacked": [
                                             "Succeeded",
                                             "Failed",
                                             "Skipped",
@@ -1422,7 +1816,7 @@
                                 }
                             },
                             "runAfter": {
-                                "Initialize_Pages_Read": [
+                                "Initialize_Marker_Read_Failed": [
                                     "Succeeded"
                                 ]
                             }
@@ -1762,6 +2156,12 @@
                                             "@variables('pages_read')",
                                             "@variables('total_pages')"
                                         ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@variables('marker_read_failed')",
+                                            false
+                                        ]
                                     }
                                 ]
                             },
@@ -1788,9 +2188,11 @@
                                         "body": {
                                             "PartitionKey": "@{parameters('CompanyId')}",
                                             "RowKey": "import",
-                                            "LastRunUtc": "@{outputs('Capture_Run_Start')}",
+                                            "LastRunUtc": "@{if(equals(variables('capped'), true), coalesce(body('Read_Checkpoint')?['LastRunUtc'], ''), outputs('Capture_Run_Start'))}",
                                             "LookbackMinutesUsed": "@{outputs('Determine_Lookback')}",
-                                            "PagesRead": "@{variables('pages_read')}"
+                                            "PagesRead": "@{variables('pages_read')}",
+                                            "NewAlarmsIngested": "@{variables('new_alarms')}",
+                                            "Capped": "@{variables('capped')}"
                                         },
                                         "retryPolicy": {
                                             "type": "exponential",
@@ -1823,7 +2225,7 @@
                                             "runStatus": "Failed",
                                             "runError": {
                                                 "code": "ImportIncomplete",
-                                                "message": "@concat('SOCRadar alarm import read ', string(variables('pages_read')), ' of ', string(variables('total_pages')), ' page(s). Open Pagination_Loop in this run to see which page failed.')"
+                                                "message": "@concat('SOCRadar alarm import read ', string(variables('pages_read')), ' of ', string(variables('total_pages')), ' page(s)', if(equals(variables('marker_read_failed'), true), '; a seen-marker read in For_Each_Alarm_AlertBacked returned neither 200 nor 404, so the checkpoint was held', ''), '. Open Pagination_Loop in this run to see which page failed.')"
                                             }
                                         },
                                         "runAfter": {}
@@ -1886,7 +2288,7 @@
                         "value": "[variables('AuditStreamName')]"
                     },
                     "EnableAlarmsTable": {
-                        "value": "[parameters('EnableAlarmsTable')]"
+                        "value": "[variables('alarmsTableEnabled')]"
                     },
                     "DceEndpoint": {
                         "value": "[parameters('DceEndpoint')]"
@@ -1914,6 +2316,12 @@
                     },
                     "CheckpointTableUrl": {
                         "value": "[variables('checkpointTableUrl')]"
+                    },
+                    "IncidentMode": {
+                        "value": "[parameters('IncidentMode')]"
+                    },
+                    "AlertBackedMaxNewPerRun": {
+                        "value": "[div(48, add(div(10, parameters('PollingIntervalMinutes')), 1))]"
                     }
                 }
             }
@@ -1964,7 +2372,7 @@
             }
         },
         {
-            "condition": "[and(parameters('EnableAlarmsTable'), not(empty(parameters('AlarmsDcrResourceId'))))]",
+            "condition": "[and(variables('alarmsTableEnabled'), not(empty(parameters('AlarmsDcrResourceId'))))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "name": "[guid(parameters('AlarmsDcrResourceId'), parameters('PlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
@@ -2016,6 +2424,131 @@
                                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('LogAnalyticsReaderRoleId'))]",
                                 "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'Full').identity.principalId]",
                                 "principalType": "ServicePrincipal"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "deploy-alert-backed-rule",
+            "resourceGroup": "[parameters('WorkspaceResourceGroup')]",
+            "condition": "[equals(parameters('IncidentMode'), 'AlertBacked')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "outer"
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "resources": [
+                        {
+                            "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+                            "apiVersion": "2024-03-01",
+                            "name": "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/', variables('alertBackedRuleId'))]",
+                            "kind": "Scheduled",
+                            "properties": {
+                                "displayName": "SOCRadar alarm",
+                                "description": "Raises one alert, and one incident, for every SOCRadar alarm the import Logic App writes to SOCRadar_Alarms_CL. Deployed only when IncidentMode is AlertBacked.",
+                                "severity": "Medium",
+                                "enabled": true,
+                                "query": "SOCRadar_Alarms_CL\n| where ingestion_time() > ago(10m)\n| where toupper(Status) == \"OPEN\"\n| where isnotempty(AlarmId)\n| summarize arg_max(TimeGenerated, *) by AlarmId\n| extend AlarmUrl = strcat(\"https://platform.socradar.com/company/\", CompanyId, \"/alarm/\", AlarmId)\n| extend SentinelSeverity = case(toupper(Severity) in (\"CRITICAL\", \"HIGH\"), \"High\", toupper(Severity) == \"MEDIUM\", \"Medium\", toupper(Severity) == \"LOW\", \"Low\", \"Informational\")\n| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText, AlarmMainType, AlarmSubType, Severity, Status, AlarmDate, AlarmUrl, SentinelSeverity\n| order by TimeGenerated asc\n| take 149",
+                                "queryFrequency": "PT5M",
+                                "queryPeriod": "PT30M",
+                                "triggerOperator": "GreaterThan",
+                                "triggerThreshold": 0,
+                                "suppressionDuration": "PT5M",
+                                "suppressionEnabled": false,
+                                "tactics": [],
+                                "techniques": [],
+                                "eventGroupingSettings": {
+                                    "aggregationKind": "AlertPerResult"
+                                },
+                                "alertDetailsOverride": {
+                                    "alertDisplayNameFormat": "[SOCRadar] #{{AlarmId}} - {{Title}}",
+                                    "alertDescriptionFormat": "{{AlarmText}}",
+                                    "alertSeverityColumnName": "SentinelSeverity"
+                                },
+                                "customDetails": {
+                                    "AlarmId": "AlarmId",
+                                    "AlarmMainType": "AlarmMainType",
+                                    "AlarmSubType": "AlarmSubType",
+                                    "SocradarSeverity": "Severity",
+                                    "AlarmStatus": "Status"
+                                },
+                                "entityMappings": [
+                                    {
+                                        "entityType": "URL",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Url",
+                                                "columnName": "AlarmUrl"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "incidentConfiguration": {
+                                    "createIncident": true,
+                                    "groupingConfiguration": {
+                                        "enabled": true,
+                                        "reopenClosedIncident": false,
+                                        "lookbackDuration": "P7D",
+                                        "matchingMethod": "Selected",
+                                        "groupByEntities": [
+                                            "URL"
+                                        ],
+                                        "groupByAlertDetails": [],
+                                        "groupByCustomDetails": []
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "type": "Microsoft.OperationalInsights/workspaces/providers/automationRules",
+                            "apiVersion": "2024-03-01",
+                            "name": "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/', variables('alertBackedAutomationRuleId'))]",
+                            "dependsOn": [
+                                "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces/providers/alertRules', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', variables('alertBackedRuleId'))]"
+                            ],
+                            "properties": {
+                                "displayName": "SOCRadar - label incidents created by the alert-backed rule",
+                                "order": 1,
+                                "triggeringLogic": {
+                                    "isEnabled": true,
+                                    "triggersOn": "Incidents",
+                                    "triggersWhen": "Created",
+                                    "conditions": [
+                                        {
+                                            "conditionType": "Property",
+                                            "conditionProperties": {
+                                                "propertyName": "IncidentRelatedAnalyticRuleIds",
+                                                "operator": "Contains",
+                                                "propertyValues": [
+                                                    "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces/providers/alertRules', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', variables('alertBackedRuleId'))]"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "actions": [
+                                    {
+                                        "order": 1,
+                                        "actionType": "ModifyProperties",
+                                        "actionConfiguration": {
+                                            "labels": [
+                                                {
+                                                    "labelName": "SOCRadar"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
                             }
                         }
                     ]

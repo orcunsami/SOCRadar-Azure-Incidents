@@ -94,7 +94,9 @@ for resource in searches:
     if "isExternalWorkspace" not in condition:
         failures.append(f"{display}: not gated on isExternalWorkspace (condition: {condition or 'none'})")
     if table in declared:
-        switch = "EnableAuditLogging" if table.startswith("SOCRadarAudit") else "EnableAlarmsTable"
+        # The alarms table is also deployed by IncidentMode=AlertBacked, so its gate is the
+        # variable that folds both switches together, not the raw parameter.
+        switch = "EnableAuditLogging" if table.startswith("SOCRadarAudit") else "alarmsTableEnabled"
         if switch not in condition:
             failures.append(f"{display}: reads {table} but is not gated on {switch}")
 
