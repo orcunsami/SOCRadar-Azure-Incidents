@@ -34,6 +34,7 @@ SOCRadar_Alarms_CL
 | where TimeGenerated > ago(7d)
 | join kind=leftouter (
     SecurityIncident
+    | summarize arg_max(TimeGenerated, *) by IncidentNumber
     | where TimeGenerated > ago(7d)
     | where Title contains "[SOCRadar]"
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
@@ -163,6 +164,7 @@ SOCRadar_Alarms_CL
 | where Severity in ("HIGH", "CRITICAL")
 | join kind=leftouter (
     SecurityIncident
+    | summarize arg_max(TimeGenerated, *) by IncidentNumber
     | where Status != "Closed"
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
 ) on AlarmId
@@ -187,6 +189,7 @@ SOCRadar_Alarms_CL
 
 // Mean time to close (incidents)
 SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
 | where Title contains "[SOCRadar]"
 | where Status == "Closed"
 | extend MTTC = datetime_diff('hour', ClosedTime, CreatedTime)

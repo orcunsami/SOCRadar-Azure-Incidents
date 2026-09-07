@@ -222,9 +222,47 @@ for path in (ROOT, IMPORT):
               f"{rel(path)}: Determine_Lookback does not read LastRunUtc")
         check("title" not in expression and "createdTimeUtc" not in expression,
               f"{rel(path)}: Determine_Lookback still derives the window from an incident")
-        check("Failed" in (lookback["runAfter"].get("Read_Checkpoint") or []),
-              f"{rel(path)}: Determine_Lookback does not tolerate a failed read - the first run "
-              f"of a fresh deployment gets a 404 and would die before importing anything")
+        # A fresh deployment's first read is a 404, so the chain from Read_Checkpoint to
+        # Determine_Lookback has to survive a failed read. Before task_azure_0056 that
+        # tolerance sat on Determine_Lookback itself, which also swallowed a 5xx and
+        # silently shortened the window. Only the guard shape is accepted now: accepting
+        # the old one too let a revert of 0056 pass green, because the three assertions
+        # below then never ran (task_azure_0057, adversarial review).
+        guard = actions.get("Check_Checkpoint_Read")
+        check(guard is not None,
+              f"{rel(path)}: Check_Checkpoint_Read is gone - a failed checkpoint read is "
+              f"no longer told apart from a first run")
+        check("Failed" in (guard["runAfter"].get("Read_Checkpoint") or []),
+              f"{rel(path)}: Check_Checkpoint_Read does not run after a failed read, so "
+              f"the first run of a fresh deployment dies on its 404")
+        check("TimedOut" in (guard["runAfter"].get("Read_Checkpoint") or []),
+              f"{rel(path)}: Check_Checkpoint_Read does not run after a timed-out read, "
+              f"so the run cascade-skips without saying why")
+        check("Check_Checkpoint_Read" in lookback["runAfter"],
+              f"{rel(path)}: Determine_Lookback no longer waits for the guard")
+        check("Read_Checkpoint" not in lookback["runAfter"],
+              f"{rel(path)}: Determine_Lookback still tolerates the raw read, which is "
+              f"the pre-0056 shape that swallowed a 5xx")
+        # And the transient case must NOT look like a first run: a non-404 failure has to
+        # raise a flag that stops the checkpoint from moving, or the run silently skips
+        # every alarm between the real checkpoint and the shortened window.
+        check("404" in json.dumps(guard["expression"]),
+              f"{rel(path)}: Check_Checkpoint_Read does not single out 404")
+        check("checkpoint_read_failed" in json.dumps(guard.get("else", {})),
+              f"{rel(path)}: a failed checkpoint read raises no flag")
+        verify = actions.get("Verify_Import_Complete", {})
+        check("checkpoint_read_failed" in json.dumps(verify.get("expression", {})),
+              f"{rel(path)}: the checkpoint can still be written after a failed read")
+        # The operator has to be told which read failed, not just that a page was missed.
+        # Fail_Incomplete_Import sits in Verify_Import_Complete's else, not at top level.
+        fail = (verify.get("else", {}).get("actions", {})
+                     .get("Fail_Incomplete_Import", {}))
+        check(bool(fail), f"{rel(path)}: Verify_Import_Complete has no failing else branch")
+        fail_msg = json.dumps(fail.get("inputs", {}))
+        check("checkpoint_read_failed" in fail_msg,
+              f"{rel(path)}: the failure message never mentions the checkpoint read")
+        check("incidents_truncated" in fail_msg,
+              f"{rel(path)}: the failure message never mentions the truncated dedup list")
         # The clamp is what keeps a stale or absent checkpoint from asking for an unbounded
         # window, and what keeps a fresh one from asking for a window shorter than the
         # polling interval.

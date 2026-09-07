@@ -179,6 +179,89 @@
     },
     "resources": [
         {
+            "comments": "Resolves the existing workspace before any resource is created. A condition:false resource counts as a satisfied dependency in ARM, so depending on the workspace resource itself does not stop the deployment when WorkspaceName does not exist and DeployNewWorkspace is false -- it would create the storage account, the data collection endpoint, the API connection, the workbook and the Sync playbook and only then fail. Everything else waits on this.",
+            "condition": "[not(variables('deployWorkspace'))]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "precheck-workspace-exists",
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "inner"
+                },
+                "parameters": {
+                    "WorkspaceResourceId": {
+                        "value": "[variables('workspaceResourceId')]"
+                    }
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "WorkspaceResourceId": {
+                            "type": "string"
+                        }
+                    },
+                    "resources": [],
+                    "outputs": {
+                        "workspaceId": {
+                            "type": "string",
+                            "value": "[reference(parameters('WorkspaceResourceId'), '2023-09-01', 'Full').properties.customerId]"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "comments": "Cross-RG only. Asserts that Microsoft Sentinel is onboarded on the external workspace, and rejects AlertBacked, which needs an alarm table this template only creates in its own resource group.",
+            "condition": "[variables('isExternalWorkspace')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "precheck-external-workspace",
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "inner"
+                },
+                "parameters": {
+                    "WorkspaceResourceId": {
+                        "value": "[variables('workspaceResourceId')]"
+                    },
+                    "IncidentMode": {
+                        "value": "[parameters('IncidentMode')]"
+                    }
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "WorkspaceResourceId": {
+                            "type": "string"
+                        },
+                        "IncidentMode": {
+                            "type": "string",
+                            "allowedValues": [
+                                "Direct"
+                            ],
+                            "metadata": {
+                                "description": "AlertBacked is not supported when the workspace is in another resource group: it needs the SOCRadar_Alarms_CL table and its data collection rule, which are only created in the deployment resource group. Deploy into the workspace's own resource group, or use Direct."
+                            }
+                        }
+                    },
+                    "resources": [],
+                    "outputs": {
+                        "sentinelOnboarded": {
+                            "type": "string",
+                            "value": "[reference(concat(parameters('WorkspaceResourceId'), '/providers/Microsoft.SecurityInsights/onboardingStates/default'), '2023-02-01', 'Full').id]"
+                        }
+                    }
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]"
+            ]
+        },
+        {
             "condition": "[variables('deployWorkspace')]",
             "type": "Microsoft.OperationalInsights/workspaces",
             "apiVersion": "2023-09-01",
@@ -193,6 +276,8 @@
             "name": "[concat('SecurityInsights(', parameters('WorkspaceName'), ')')]",
             "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]"
             ],
             "plan": {
@@ -211,6 +296,8 @@
             "apiVersion": "2024-03-01",
             "name": "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/default')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
             "properties": {}
@@ -221,6 +308,8 @@
             "apiVersion": "2022-10-01",
             "name": "[concat(parameters('WorkspaceName'), '/', variables('AuditTableName'))]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -286,6 +375,8 @@
             "name": "[variables('AuditDcrName')]",
             "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), variables('AuditTableName'))]"
             ],
             "kind": "Direct",
@@ -366,7 +457,11 @@
                 "networkAcls": {
                     "publicNetworkAccess": "Enabled"
                 }
-            }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]"
+            ]
         },
         {
             "condition": "[and(variables('alarmsTableEnabled'), not(variables('isExternalWorkspace')))]",
@@ -374,6 +469,8 @@
             "apiVersion": "2022-10-01",
             "name": "[concat(parameters('WorkspaceName'), '/', variables('AlarmsTableName'))]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -449,6 +546,8 @@
             "name": "[variables('AlarmsDcrName')]",
             "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('DceName'))]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), variables('AlarmsTableName'))]"
             ],
@@ -540,7 +639,11 @@
                 "version": "1.0",
                 "sourceId": "[variables('workspaceResourceId')]",
                 "category": "sentinel"
-            }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]"
+            ]
         },
         {
             "condition": "[and(variables('alarmsTableEnabled'), not(variables('isExternalWorkspace')))]",
@@ -548,6 +651,8 @@
             "apiVersion": "2025-07-01",
             "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_1')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -587,6 +692,8 @@
             "apiVersion": "2025-07-01",
             "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_2')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -626,6 +733,8 @@
             "apiVersion": "2025-07-01",
             "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_3')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -665,6 +774,8 @@
             "apiVersion": "2025-07-01",
             "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_4')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -672,7 +783,7 @@
                 "eTag": "*",
                 "displayName": "SOCRadar Incident Correlation",
                 "category": "Hunting Queries",
-                "query": "SecurityIncident\n| where Labels has \"SOCRadar\"\n| summarize Count=count() by Status, Classification\n| order by Count desc\n",
+                "query": "SecurityIncident\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Labels has \"SOCRadar\"\n| summarize Count=count() by Status, Classification\n| order by Count desc\n",
                 "version": 2,
                 "tags": [
                     {
@@ -704,6 +815,8 @@
             "apiVersion": "2025-07-01",
             "name": "[concat(parameters('WorkspaceName'), '/SOCRadar_Hunting_Query_5')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.OperationsManagement/solutions', concat('SecurityInsights(', parameters('WorkspaceName'), ')'))]"
             ],
@@ -751,13 +864,19 @@
                 "minimumTlsVersion": "TLS1_2",
                 "allowSharedKeyAccess": false,
                 "allowBlobPublicAccess": false
-            }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]"
+            ]
         },
         {
             "type": "Microsoft.Storage/storageAccounts/tableServices",
             "apiVersion": "2023-05-01",
             "name": "[concat(variables('checkpointStorageAccountName'), '/default')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName'))]"
             ]
         },
@@ -766,6 +885,8 @@
             "apiVersion": "2023-05-01",
             "name": "[concat(variables('checkpointStorageAccountName'), '/default/', variables('checkpointTableName'))]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('checkpointStorageAccountName'), 'default')]"
             ]
         },
@@ -775,6 +896,8 @@
             "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName')), variables('ImportPlaybookName'), variables('StorageTableDataContributorRoleId'))]",
             "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName'))]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
                 "[resourceId('Microsoft.Storage/storageAccounts', variables('checkpointStorageAccountName'))]"
             ],
@@ -796,7 +919,11 @@
                     "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', resourceGroup().location, 'azuresentinel')]"
                 },
                 "parameterValueType": "Alternative"
-            }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]"
+            ]
         },
         {
             "type": "Microsoft.Logic/workflows",
@@ -807,6 +934,8 @@
                 "type": "SystemAssigned"
             },
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName'))]",
@@ -939,7 +1068,7 @@
                                 }
                             },
                             "runAfter": {
-                                "Capture_Run_Start": [
+                                "Initialize_Checkpoint_Read_Failed": [
                                     "Succeeded"
                                 ]
                             }
@@ -948,9 +1077,8 @@
                             "type": "Compose",
                             "inputs": "@if(empty(coalesce(body('Read_Checkpoint')?['LastRunUtc'], '')), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(body('Read_Checkpoint')?['LastRunUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60)), 10080))",
                             "runAfter": {
-                                "Read_Checkpoint": [
-                                    "Succeeded",
-                                    "Failed"
+                                "Check_Checkpoint_Read": [
+                                    "Succeeded"
                                 ]
                             }
                         },
@@ -992,7 +1120,7 @@
                                 ]
                             },
                             "runAfter": {
-                                "Initialize_Existing_Incidents": [
+                                "Initialize_Incidents_Truncated": [
                                     "Succeeded"
                                 ]
                             }
@@ -1069,7 +1197,7 @@
                                 "select": "@if(contains(coalesce(item()?['properties']?['title'], ''), '#'), split(split(coalesce(item()?['properties']?['title'], ''), '#')[1], ' ')[0], '')"
                             },
                             "runAfter": {
-                                "Pagination_Loop_Incidents": [
+                                "Check_Incidents_Complete": [
                                     "Succeeded"
                                 ]
                             }
@@ -1246,6 +1374,9 @@
                                                             "type": "integer"
                                                         }
                                                     }
+                                                },
+                                                "is_success": {
+                                                    "type": "boolean"
                                                 }
                                             }
                                         }
@@ -1293,7 +1424,7 @@
                                         "and": [
                                             {
                                                 "equals": [
-                                                    "@coalesce(body('Parse_Page_Response')?['is_success'], true)",
+                                                    "@coalesce(body('Parse_Page_Response')?['is_success'], false)",
                                                     true
                                                 ]
                                             }
@@ -2400,7 +2531,7 @@
                                         "Extract_Backfill_Alarm_Id": {
                                             "type": "Compose",
                                             "runAfter": {},
-                                            "inputs": "@first(split(last(split(coalesce(items('For_Each_Missing_Entity')?['properties']?['title'], ''), '#')), ' '))"
+                                            "inputs": "@first(split(split(coalesce(items('For_Each_Missing_Entity')?['properties']?['title'], ''), '#')[1], ' '))"
                                         },
                                         "Fetch_Backfill_Alarm": {
                                             "type": "Http",
@@ -2715,6 +2846,18 @@
                                             "@variables('marker_read_failed')",
                                             false
                                         ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@variables('checkpoint_read_failed')",
+                                            false
+                                        ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@variables('incidents_truncated')",
+                                            false
+                                        ]
                                     }
                                 ]
                             },
@@ -2778,7 +2921,7 @@
                                             "runStatus": "Failed",
                                             "runError": {
                                                 "code": "ImportIncomplete",
-                                                "message": "@concat('SOCRadar alarm import read ', string(variables('pages_read')), ' of ', string(variables('total_pages')), ' page(s)', if(equals(variables('marker_read_failed'), true), '; a seen-marker read in For_Each_Alarm_AlertBacked returned neither 200 nor 404, so the checkpoint was held', ''), '. Open Pagination_Loop in this run to see which page failed.')"
+                                                "message": "@concat('SOCRadar alarm import read ', string(variables('pages_read')), ' of ', string(variables('total_pages')), ' page(s)', if(equals(variables('marker_read_failed'), true), '; a seen-marker read in For_Each_Alarm_AlertBacked returned neither 200 nor 404, so the checkpoint was held', ''), if(equals(variables('checkpoint_read_failed'), true), '; Read_Checkpoint returned neither 200 nor 404, so the checkpoint was held and the window was not advanced', ''), if(equals(variables('incidents_truncated'), true), '; the existing-incident query in Pagination_Loop_Incidents stopped before its last page, so the deduplication list was incomplete and the checkpoint was held', ''), '. Open ', if(equals(variables('checkpoint_read_failed'), true), 'Read_Checkpoint', if(equals(variables('incidents_truncated'), true), 'Pagination_Loop_Incidents', if(equals(variables('marker_read_failed'), true), 'For_Each_Alarm_AlertBacked', 'Pagination_Loop'))), ' in this run to see what failed.')"
                                             }
                                         },
                                         "runAfter": {}
@@ -2790,6 +2933,112 @@
                                     "Succeeded",
                                     "Failed",
                                     "Skipped"
+                                ]
+                            }
+                        },
+                        "Initialize_Checkpoint_Read_Failed": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "checkpoint_read_failed",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Capture_Run_Start": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Check_Checkpoint_Read": {
+                            "type": "If",
+                            "expression": {
+                                "or": [
+                                    {
+                                        "equals": [
+                                            "@outputs('Read_Checkpoint')?['statusCode']",
+                                            200
+                                        ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@outputs('Read_Checkpoint')?['statusCode']",
+                                            404
+                                        ]
+                                    }
+                                ]
+                            },
+                            "actions": {},
+                            "else": {
+                                "actions": {
+                                    "Flag_Checkpoint_Read_Failed": {
+                                        "type": "SetVariable",
+                                        "inputs": {
+                                            "name": "checkpoint_read_failed",
+                                            "value": true
+                                        },
+                                        "runAfter": {}
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Read_Checkpoint": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
+                                ]
+                            }
+                        },
+                        "Initialize_Incidents_Truncated": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "incidents_truncated",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Initialize_Existing_Incidents": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Check_Incidents_Complete": {
+                            "type": "If",
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@variables('incidents_next_link')",
+                                            ""
+                                        ]
+                                    }
+                                ]
+                            },
+                            "actions": {},
+                            "else": {
+                                "actions": {
+                                    "Flag_Incidents_Truncated": {
+                                        "type": "SetVariable",
+                                        "inputs": {
+                                            "name": "incidents_truncated",
+                                            "value": true
+                                        },
+                                        "runAfter": {}
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Pagination_Loop_Incidents": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
                                 ]
                             }
                         }
@@ -2888,6 +3137,8 @@
                 "type": "SystemAssigned"
             },
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('WorkspaceName'))]",
                 "[resourceId('Microsoft.Web/connections', variables('SentinelConnectionName'))]"
             ],
@@ -3256,6 +3507,15 @@
                                                 "Update_SOCRadar_Status": [
                                                     "Succeeded"
                                                 ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Log_SOCRadar_Write_Failed": {
+                                                        "type": "Compose",
+                                                        "runAfter": {},
+                                                        "inputs": "@concat('SOCRadar rejected the status update for alarm ', string(coalesce(outputs('Resolve_Alarm_ID'), '')), ': ', string(coalesce(body('Update_SOCRadar_Status'), outputs('Update_SOCRadar_Status')?['statusCode'], 'no response')))"
+                                                    }
+                                                }
                                             }
                                         },
                                         "Check_Severity_Sync_Enabled": {
@@ -3477,6 +3737,8 @@
             "name": "[guid(variables('workspaceResourceId'), variables('ImportPlaybookName'), variables('importSentinelRoleDefinitionId'))]",
             "scope": "[variables('workspaceResourceId')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]"
             ],
             "properties": {
@@ -3492,6 +3754,8 @@
             "name": "[guid(variables('workspaceResourceId'), variables('ImportPlaybookName'), variables('LogAnalyticsReaderRoleId'))]",
             "scope": "[variables('workspaceResourceId')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]"
             ],
             "properties": {
@@ -3507,6 +3771,8 @@
             "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName')), variables('ImportPlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
             "scope": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName'))]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AuditDcrName'))]"
             ],
@@ -3523,6 +3789,8 @@
             "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName')), variables('ImportPlaybookName'), variables('MonitoringMetricsPublisherRoleId'))]",
             "scope": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]"
             ],
@@ -3539,6 +3807,8 @@
             "name": "[guid(variables('workspaceResourceId'), variables('SyncPlaybookName'), variables('sentinelRoleDefinitionId'))]",
             "scope": "[variables('workspaceResourceId')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('SyncPlaybookName'))]"
             ],
             "properties": {
@@ -3554,6 +3824,8 @@
             "name": "deploy-workspace-roles",
             "resourceGroup": "[parameters('WorkspaceResourceGroup')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.Logic/workflows', variables('ImportPlaybookName'))]",
                 "[resourceId('Microsoft.Logic/workflows', variables('SyncPlaybookName'))]"
             ],
@@ -3610,6 +3882,8 @@
             "resourceGroup": "[parameters('WorkspaceResourceGroup')]",
             "condition": "[equals(parameters('IncidentMode'), 'AlertBacked')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-workspace-exists')]",
+                "[resourceId('Microsoft.Resources/deployments', 'precheck-external-workspace')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('WorkspaceName'), variables('AlarmsTableName'))]",
                 "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName'))]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces/providers/onboardingStates', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', 'default')]",

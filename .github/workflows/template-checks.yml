@@ -69,6 +69,12 @@ jobs:
       - name: Cross-RG role assignments grant the same roles as the same-RG path
         run: python3 tests/test_cross_rg_roles.py
 
+      - name: Import cannot lose alarms or duplicate incidents silently
+        run: python3 tests/test_import_integrity.py
+
+      - name: Every SecurityIncident query collapses to the newest version
+        run: python3 tests/test_incident_dedup.py
+
       - name: No secrets in tracked files
         run: |
           set -e
