@@ -476,6 +476,15 @@
                                                 "Update_SOCRadar_Status": [
                                                     "Succeeded"
                                                 ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Log_SOCRadar_Write_Failed": {
+                                                        "type": "Compose",
+                                                        "runAfter": {},
+                                                        "inputs": "@concat('SOCRadar rejected the status update for alarm ', string(coalesce(outputs('Resolve_Alarm_ID'), '')), ': ', string(coalesce(body('Update_SOCRadar_Status'), outputs('Update_SOCRadar_Status')?['statusCode'], 'no response')))"
+                                                    }
+                                                }
                                             }
                                         },
                                         "Check_Severity_Sync_Enabled": {

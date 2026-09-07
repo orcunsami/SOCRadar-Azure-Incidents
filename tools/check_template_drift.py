@@ -187,14 +187,27 @@ def main():
     compare("Capture_Run_Start", action_field(root_import, "Capture_Run_Start", "inputs"),
             action_field(mod_import, "Capture_Run_Start", "inputs"))
 
-    # Determine_Lookback has to tolerate a failed read. The first run of a fresh deployment
-    # gets a 404 because the checkpoint row does not exist yet; without Failed in runAfter
-    # the whole run dies before it imports anything, and validate cannot see that.
+    # A failed read has to be tolerated, but a 404 (no checkpoint yet) and a 403/5xx (we
+    # could not look) must not be treated the same. Since task_azure_0056 that split lives
+    # in Check_Checkpoint_Read, and Determine_Lookback waits for it. This check asserted
+    # the pre-0056 shape until task_azure_0057 and went red the moment 0056 landed; it is
+    # rewritten rather than removed so the invariant it guarded still has a gate.
     for label, actions in (("root", root_import), ("standalone", mod_import)):
+        guard = json.loads(run_after(actions, "Check_Checkpoint_Read") or "null")
+        if guard is None:
+            failures.append(f"Check_Checkpoint_Read: missing from the {label} import playbook - "
+                            f"a 404 first run and a transient read failure are no longer told apart")
+            continue
+        if "Failed" not in (guard.get("Read_Checkpoint") or []):
+            failures.append(f"Check_Checkpoint_Read: does not run after a failed Read_Checkpoint in "
+                            f"the {label} import playbook - the first run would die on its 404")
         after = json.loads(run_after(actions, "Determine_Lookback") or "{}")
-        if "Failed" not in (after.get("Read_Checkpoint") or []):
-            failures.append(f"Determine_Lookback: does not run after a failed Read_Checkpoint in the "
-                            f"{label} import playbook - the first run of a new deployment would die on 404")
+        if "Check_Checkpoint_Read" not in after:
+            failures.append(f"Determine_Lookback: does not wait for Check_Checkpoint_Read in the "
+                            f"{label} import playbook")
+        if "Read_Checkpoint" in after:
+            failures.append(f"Determine_Lookback: still runs directly after Read_Checkpoint in the "
+                            f"{label} import playbook - the pre-0056 shape swallowed a 5xx")
 
     # The checkpoint may only advance on a complete import. Writing it anywhere else means a
     # half-read run moves the window forward and the alarms it never read are lost for good.
@@ -349,6 +362,116 @@ def main():
             "azuredeploy.json: DeployNewWorkspace must default to false, so the one-click deployment "
             "never creates or rewrites a workspace unless the operator asks for it"
         )
+
+    # DeployNewWorkspace=false against a WorkspaceName that does not exist is the default
+    # one-click path with one typo in it, and until task_azure_0057 it half-installed: ARM
+    # counts a condition:false resource as a satisfied dependency, so depending on the
+    # workspace resource stopped nothing. The storage account, the data collection
+    # endpoint, the API connection, the workbook and the Sync playbook were all created
+    # and only then did the deployment fail. A nested deployment that resolves the
+    # existing workspace has to run first, and everything else has to wait on it.
+    GUARD = "precheck-workspace-exists"
+    resources = root.get("resources", [])
+    guard = [r for r in resources if r.get("name") == GUARD]
+    if not guard:
+        failures.append(
+            f"azuredeploy.json: no {GUARD} nested deployment - a wrong WorkspaceName with "
+            "DeployNewWorkspace=false would create resources before failing"
+        )
+    else:
+        condition = expand_variables(guard[0].get("condition", ""))
+        if "DeployNewWorkspace" not in condition:
+            failures.append(
+                f"azuredeploy.json: {GUARD} is not gated on DeployNewWorkspace "
+                f"(condition: {guard[0].get('condition') or 'none'}) - it would look for a "
+                "workspace this deployment is about to create"
+            )
+        inner = (guard[0].get("properties", {}).get("template", {})
+                          .get("outputs") or {})
+        if "reference(" not in json.dumps(inner):
+            failures.append(
+                f"azuredeploy.json: {GUARD} does not reference the workspace, so it "
+                "succeeds whether the workspace exists or not"
+            )
+        if (guard[0].get("properties", {}).get("expressionEvaluationOptions", {})
+                    .get("scope") != "inner"):
+            failures.append(
+                f"azuredeploy.json: {GUARD} does not use inner expression evaluation, so "
+                "its reference() resolves in the parent scope and never fails"
+            )
+        guard_id = f"[resourceId('Microsoft.Resources/deployments', '{GUARD}')]"
+        unguarded = [
+            r.get("name") for r in resources
+            if r.get("name") != GUARD
+            and r.get("type") != "Microsoft.OperationalInsights/workspaces"
+            and guard_id not in (r.get("dependsOn") or [])
+        ]
+        if unguarded:
+            failures.append(
+                f"azuredeploy.json: {len(unguarded)} resource(s) do not wait for {GUARD} "
+                f"and would be created before the workspace check fails: {unguarded[:4]}"
+            )
+
+    # Cross-RG has two more ways to look green and be dead, both of them the same ARM
+    # semantics as above. The SecurityInsights solution and onboardingStates/default are
+    # gated on not(isExternalWorkspace), so nothing onboards an external workspace and the
+    # deployment succeeds against one with no Microsoft Sentinel on it (measured). And the
+    # alert-backed analytics rule is gated on IncidentMode alone while the alarm table it
+    # queries is gated on not(isExternalWorkspace), so the rule would be created against a
+    # table that does not exist. precheck-external-workspace asserts both.
+    GUARD2 = "precheck-external-workspace"
+    guard2 = [r for r in resources if r.get("name") == GUARD2]
+    if not guard2:
+        failures.append(
+            f"azuredeploy.json: no {GUARD2} nested deployment - a cross-RG deployment would "
+            "succeed against a workspace with no Microsoft Sentinel, and would accept "
+            "AlertBacked without the alarm table it needs"
+        )
+    else:
+        props = guard2[0].get("properties", {})
+        inner = props.get("template", {})
+        condition = expand_variables(guard2[0].get("condition", ""))
+        if "WorkspaceResourceGroup" not in condition:
+            failures.append(
+                f"azuredeploy.json: {GUARD2} is not gated on the workspace resource group "
+                f"(condition: {guard2[0].get('condition') or 'none'}) - it would run in the "
+                "same-RG case, where this template does the onboarding itself"
+            )
+        if props.get("expressionEvaluationOptions", {}).get("scope") != "inner":
+            failures.append(
+                f"azuredeploy.json: {GUARD2} does not use inner expression evaluation, so "
+                "neither its reference() nor its allowedValues is enforced"
+            )
+        if "onboardingStates" not in json.dumps(inner.get("outputs") or {}):
+            failures.append(
+                f"azuredeploy.json: {GUARD2} does not reference onboardingStates, so a "
+                "cross-RG deployment onto a workspace without Microsoft Sentinel still succeeds"
+            )
+        # 'Full' references on this proxy resource have no .name -- asking for it fails the
+        # guard for every legitimate cross-RG customer while the reject branches stay green.
+        if ".name]" in json.dumps(inner.get("outputs") or {}):
+            failures.append(
+                f"azuredeploy.json: {GUARD2} reads .name off a Full reference, which does not "
+                "exist on onboardingStates - the guard would fail even when Sentinel IS onboarded"
+            )
+        allowed = ((inner.get("parameters") or {}).get("IncidentMode") or {}).get("allowedValues")
+        if allowed != ["Direct"]:
+            failures.append(
+                f"azuredeploy.json: {GUARD2} does not restrict IncidentMode to ['Direct'] "
+                f"(found {allowed}) - AlertBacked cross-RG would deploy a rule with no table"
+            )
+        guard2_id = f"[resourceId('Microsoft.Resources/deployments', '{GUARD2}')]"
+        unguarded2 = [
+            r.get("name") for r in resources
+            if r.get("name") not in (GUARD, GUARD2)
+            and r.get("type") != "Microsoft.OperationalInsights/workspaces"
+            and guard2_id not in (r.get("dependsOn") or [])
+        ]
+        if unguarded2:
+            failures.append(
+                f"azuredeploy.json: {len(unguarded2)} resource(s) do not wait for {GUARD2}: "
+                f"{unguarded2[:4]}"
+            )
 
     # No template may hardcode the Azure public cloud ARM host. environment().resourceManager
     # is what lets the same template deploy into a sovereign cloud, and a single leftover

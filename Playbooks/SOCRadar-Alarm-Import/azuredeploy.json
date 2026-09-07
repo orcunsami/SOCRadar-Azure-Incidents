@@ -386,7 +386,7 @@
                                 }
                             },
                             "runAfter": {
-                                "Capture_Run_Start": [
+                                "Initialize_Checkpoint_Read_Failed": [
                                     "Succeeded"
                                 ]
                             }
@@ -395,9 +395,8 @@
                             "type": "Compose",
                             "inputs": "@if(empty(coalesce(body('Read_Checkpoint')?['LastRunUtc'], '')), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(body('Read_Checkpoint')?['LastRunUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60)), 10080))",
                             "runAfter": {
-                                "Read_Checkpoint": [
-                                    "Succeeded",
-                                    "Failed"
+                                "Check_Checkpoint_Read": [
+                                    "Succeeded"
                                 ]
                             }
                         },
@@ -439,7 +438,7 @@
                                 ]
                             },
                             "runAfter": {
-                                "Initialize_Existing_Incidents": [
+                                "Initialize_Incidents_Truncated": [
                                     "Succeeded"
                                 ]
                             }
@@ -516,7 +515,7 @@
                                 "select": "@if(contains(coalesce(item()?['properties']?['title'], ''), '#'), split(split(coalesce(item()?['properties']?['title'], ''), '#')[1], ' ')[0], '')"
                             },
                             "runAfter": {
-                                "Pagination_Loop_Incidents": [
+                                "Check_Incidents_Complete": [
                                     "Succeeded"
                                 ]
                             }
@@ -693,6 +692,9 @@
                                                             "type": "integer"
                                                         }
                                                     }
+                                                },
+                                                "is_success": {
+                                                    "type": "boolean"
                                                 }
                                             }
                                         }
@@ -740,7 +742,7 @@
                                         "and": [
                                             {
                                                 "equals": [
-                                                    "@coalesce(body('Parse_Page_Response')?['is_success'], true)",
+                                                    "@coalesce(body('Parse_Page_Response')?['is_success'], false)",
                                                     true
                                                 ]
                                             }
@@ -1847,7 +1849,7 @@
                                         "Extract_Backfill_Alarm_Id": {
                                             "type": "Compose",
                                             "runAfter": {},
-                                            "inputs": "@first(split(last(split(coalesce(items('For_Each_Missing_Entity')?['properties']?['title'], ''), '#')), ' '))"
+                                            "inputs": "@first(split(split(coalesce(items('For_Each_Missing_Entity')?['properties']?['title'], ''), '#')[1], ' '))"
                                         },
                                         "Fetch_Backfill_Alarm": {
                                             "type": "Http",
@@ -2162,6 +2164,18 @@
                                             "@variables('marker_read_failed')",
                                             false
                                         ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@variables('checkpoint_read_failed')",
+                                            false
+                                        ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@variables('incidents_truncated')",
+                                            false
+                                        ]
                                     }
                                 ]
                             },
@@ -2225,7 +2239,7 @@
                                             "runStatus": "Failed",
                                             "runError": {
                                                 "code": "ImportIncomplete",
-                                                "message": "@concat('SOCRadar alarm import read ', string(variables('pages_read')), ' of ', string(variables('total_pages')), ' page(s)', if(equals(variables('marker_read_failed'), true), '; a seen-marker read in For_Each_Alarm_AlertBacked returned neither 200 nor 404, so the checkpoint was held', ''), '. Open Pagination_Loop in this run to see which page failed.')"
+                                                "message": "@concat('SOCRadar alarm import read ', string(variables('pages_read')), ' of ', string(variables('total_pages')), ' page(s)', if(equals(variables('marker_read_failed'), true), '; a seen-marker read in For_Each_Alarm_AlertBacked returned neither 200 nor 404, so the checkpoint was held', ''), if(equals(variables('checkpoint_read_failed'), true), '; Read_Checkpoint returned neither 200 nor 404, so the checkpoint was held and the window was not advanced', ''), if(equals(variables('incidents_truncated'), true), '; the existing-incident query in Pagination_Loop_Incidents stopped before its last page, so the deduplication list was incomplete and the checkpoint was held', ''), '. Open ', if(equals(variables('checkpoint_read_failed'), true), 'Read_Checkpoint', if(equals(variables('incidents_truncated'), true), 'Pagination_Loop_Incidents', if(equals(variables('marker_read_failed'), true), 'For_Each_Alarm_AlertBacked', 'Pagination_Loop'))), ' in this run to see what failed.')"
                                             }
                                         },
                                         "runAfter": {}
@@ -2237,6 +2251,112 @@
                                     "Succeeded",
                                     "Failed",
                                     "Skipped"
+                                ]
+                            }
+                        },
+                        "Initialize_Checkpoint_Read_Failed": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "checkpoint_read_failed",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Capture_Run_Start": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Check_Checkpoint_Read": {
+                            "type": "If",
+                            "expression": {
+                                "or": [
+                                    {
+                                        "equals": [
+                                            "@outputs('Read_Checkpoint')?['statusCode']",
+                                            200
+                                        ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "@outputs('Read_Checkpoint')?['statusCode']",
+                                            404
+                                        ]
+                                    }
+                                ]
+                            },
+                            "actions": {},
+                            "else": {
+                                "actions": {
+                                    "Flag_Checkpoint_Read_Failed": {
+                                        "type": "SetVariable",
+                                        "inputs": {
+                                            "name": "checkpoint_read_failed",
+                                            "value": true
+                                        },
+                                        "runAfter": {}
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Read_Checkpoint": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
+                                ]
+                            }
+                        },
+                        "Initialize_Incidents_Truncated": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "incidents_truncated",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Initialize_Existing_Incidents": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Check_Incidents_Complete": {
+                            "type": "If",
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@variables('incidents_next_link')",
+                                            ""
+                                        ]
+                                    }
+                                ]
+                            },
+                            "actions": {},
+                            "else": {
+                                "actions": {
+                                    "Flag_Incidents_Truncated": {
+                                        "type": "SetVariable",
+                                        "inputs": {
+                                            "name": "incidents_truncated",
+                                            "value": true
+                                        },
+                                        "runAfter": {}
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Pagination_Loop_Incidents": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
                                 ]
                             }
                         }

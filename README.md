@@ -51,16 +51,86 @@ Alarms and audit events are also written to custom Log Analytics tables. Hunting
 | `SocradarApiKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
-A wrong `WorkspaceName` fails the deployment, but not before it has created things. ARM starts
-every resource that does not depend on the workspace in parallel, so a typo (measured, with
-`DeployNewWorkspace=false`) leaves behind the checkpoint storage account, the Data Collection
-Endpoint, the workbook, the Microsoft Sentinel API connection, and an **enabled**
-SOCRadar-Alarm-Sync Logic App polling every five minutes. Fix the name and redeploy over the
-same resource group, or delete the resource group and start again -- but do not leave the
-failed deployment sitting there, because that Logic App is running and billable.
+A wrong `WorkspaceName` with `DeployNewWorkspace=false` now fails before anything is created.
+The deployment resolves the workspace in a `precheck-workspace-exists` step that every other
+resource waits on, so the resource group is left empty and the only failed operation is that
+one step. Measured on a fresh resource group: `0` resources afterwards.
 
-With `DeployNewWorkspace=true` a typo does not fail at all: it creates a second, empty
-workspace under the misspelled name.
+This used to half-install. Depending on the workspace resource was not enough, because ARM
+counts a resource whose `condition` is false as a satisfied dependency -- so the checkpoint
+storage account, the Data Collection Endpoint, the workbook, the Microsoft Sentinel API
+connection and an **enabled** SOCRadar-Alarm-Sync Logic App were all created, and only then did
+the deployment fail. If you are looking at a resource group in that state from an earlier
+attempt, redeploying over it with the correct name reconciles it; the Logic App in it is
+billable until then, so disable it or delete the resource group.
+
+With `DeployNewWorkspace=true` a typo still does not fail: it creates a second, empty workspace
+under the misspelled name. The pre-check is skipped in that mode, because the workspace is not
+supposed to exist yet.
+
+### Redeploy to fix a failed deployment -- do not delete the Logic Apps first
+
+Redeploying over the same resource group is safe and is the way to fix a failed or partial
+deployment. Deleting the Logic Apps and starting again is **not**, and this is the one recovery
+step that makes things worse.
+
+The role assignments are named after the workspace and the playbook, not after the identity
+they grant. Deleting a Logic App leaves its assignment behind at workspace scope with a
+principal that no longer exists. The next deployment creates a new Logic App with a new
+identity, computes the same assignment name, and Azure refuses to move an existing assignment
+to a different principal:
+
+```
+RoleAssignmentUpdateNotPermitted
+Tenant ID, application ID, principal ID, and scope are not allowed to be updated.
+```
+
+To recover, delete the orphaned assignments and redeploy. An orphan is the one with no
+`principalName` -- its principal is gone:
+
+```bash
+WS=$(az monitor log-analytics workspace show -g <workspace-rg> -n <workspace> --query id -o tsv)
+az role assignment list --scope "$WS" \
+  --query "[?principalName==null].{name:name, role:roleDefinitionName}" -o table
+az role assignment delete --ids "$WS/providers/Microsoft.Authorization/roleAssignments/<name>"
+```
+
+Measured: after that, the same deployment succeeds in 34 seconds and both Logic Apps come back.
+
+The pre-check cannot catch this -- ARM can assert that a resource exists, not that it is
+absent. Renaming the assignments is not an option either: Azure rejects a second assignment for
+the same identity, role and scope with `RoleAssignmentExists`, so a new naming scheme would
+break redeployment for every existing install. Both measured.
+
+The same collision is why two installs cannot share one workspace. For several SOCRadar
+companies in one workspace, use the MSSP edition, which is built for it.
+
+### Cross-RG: Microsoft Sentinel must already be onboarded, and AlertBacked is not available
+
+When `WorkspaceResourceGroup` points somewhere else, this template does not onboard the
+workspace -- both the Microsoft Sentinel solution and its onboarding state are only created in
+the deployment resource group. A `precheck-external-workspace` step therefore reads the
+workspace's onboarding state and stops the deployment if Microsoft Sentinel is not there:
+
+```
+Microsoft Sentinel was not found on the workspace '<name>'
+```
+
+This used to succeed. The deployment went green and the integration was dead, because a
+workspace can carry the Microsoft Sentinel solution and still have no onboarding state.
+
+The same step rejects `IncidentMode=AlertBacked` cross-RG, during template validation, before
+anything is created:
+
+```
+The provided value for the template parameter 'IncidentMode' is not valid.
+The value 'AlertBacked' is not part of the allowed value(s): 'Direct'.
+```
+
+Alert-backed mode needs `SOCRadar_Alarms_CL` and its data collection rule, and this template
+only creates those in its own resource group -- but the analytics rule that queries the table
+is gated on `IncidentMode` alone, so it would have been created against a table that does not
+exist. Deploy into the workspace's own resource group to use alert-backed mode.
 
 ### Optional
 

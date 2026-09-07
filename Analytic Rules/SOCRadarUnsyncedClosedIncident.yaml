@@ -18,6 +18,7 @@ relevantTechniques:
   - T1526
 query: |
     SecurityIncident
+    | summarize arg_max(TimeGenerated, *) by IncidentNumber
     | where Labels has "SOCRadar"
     | where Status == "Closed"
     | where LastModifiedTime < ago(30m)
