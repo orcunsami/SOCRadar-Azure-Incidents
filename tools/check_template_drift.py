@@ -357,10 +357,24 @@ def main():
                 f"{sorted(dangerous)} - a deployment would write these over an existing workspace"
             )
 
-    if root.get("parameters", {}).get("DeployNewWorkspace", {}).get("defaultValue") is not False:
+    # The Deploy button is a one-click install: the workspace it names gets created. This is
+    # safe against an existing workspace only because of the empty properties block checked
+    # above (task_azure_0065 measured a full 22-field diff of zero, tags included). The
+    # default was false from task_azure_0034 until 0065; with it, every click on a fresh
+    # name failed at the precheck with a raw ResourceNotFound.
+    params = root.get("parameters", {})
+    if params.get("DeployNewWorkspace", {}).get("defaultValue") is not True:
         failures.append(
-            "azuredeploy.json: DeployNewWorkspace must default to false, so the one-click deployment "
-            "never creates or rewrites a workspace unless the operator asks for it"
+            "azuredeploy.json: DeployNewWorkspace must default to true, so the one-click deployment "
+            "creates the workspace it names instead of failing on a fresh name"
+        )
+    # The portal form lists parameters in declaration order. The switch belongs right under
+    # the name it acts on; at the bottom of an 18-parameter form it was missed twice in a row.
+    order = list(params.keys())
+    if order[:2] != ["WorkspaceName", "DeployNewWorkspace"]:
+        failures.append(
+            "azuredeploy.json: DeployNewWorkspace must be declared directly after WorkspaceName "
+            f"(portal form order), found {order[:3]}"
         )
 
     # DeployNewWorkspace=false against a WorkspaceName that does not exist is the default

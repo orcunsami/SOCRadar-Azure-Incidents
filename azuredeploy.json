@@ -15,6 +15,13 @@
                 "description": "Microsoft Sentinel Log Analytics Workspace Name"
             }
         },
+        "DeployNewWorkspace": {
+            "type": "bool",
+            "defaultValue": true,
+            "metadata": {
+                "description": "Create the Log Analytics workspace named WorkspaceName when it does not exist yet. Leave true for a one-click install. A workspace that already exists under this name is left as it is: the workspace resource states no settings, and a live check found tags, pricing tier, retention, daily cap and feature flags all unchanged after the deployment. Set false when the workspace must already exist; a misspelled name then fails before anything is created instead of creating a second, empty workspace. Only honoured when WorkspaceResourceGroup is the deployment resource group, because a workspace cannot be created in another resource group from this template. An existing workspace in a different region than WorkspaceLocation fails the deployment with InvalidResourceLocation before anything is created."
+            }
+        },
         "WorkspaceLocation": {
             "type": "string",
             "defaultValue": "[resourceGroup().location]",
@@ -137,13 +144,6 @@
             "defaultValue": true,
             "metadata": {
                 "description": "Extract IP, domain and URL indicators from alarm details and attach them to the incident as entities. Requires Microsoft Sentinel Contributor for the import playbook because bookmark write is not included in Responder. When false, the import identity keeps the SentinelRoleLevel role."
-            }
-        },
-        "DeployNewWorkspace": {
-            "type": "bool",
-            "defaultValue": false,
-            "metadata": {
-                "description": "Create a new Log Analytics workspace named WorkspaceName. Leave false when the workspace already exists. The workspace resource declares no workspace-level settings, so even a mistaken true cannot rewrite an existing workspace's pricing tier, retention or daily cap: a template only overwrites the fields it states, and this one states none. A new workspace is created with the subscription default tier. Only honoured when WorkspaceResourceGroup is the deployment resource group, because a workspace cannot be created in another resource group from here."
             }
         }
     },
