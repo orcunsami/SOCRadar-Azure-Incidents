@@ -166,8 +166,8 @@ az monitor log-analytics workspace show -g <resource-group> -n <workspace> \
 If `lastSkuUpdate` lines up with when you first deployed this integration and the tier isn't
 the one you picked, reset your commitment tier from **Log Analytics workspaces > Usage and
 estimated costs > Pricing tier**. The current template states no workspace-level settings at
-all, so redeploying or upgrading an existing install -- even with `DeployNewWorkspace=true` set
-by mistake -- cannot change its pricing tier, retention or daily cap; a mutation test against a
+all, so redeploying or upgrading an existing install -- with `DeployNewWorkspace` at its default
+`true` -- cannot change its pricing tier, retention or daily cap; a mutation test against a
 live workspace (non-default 90-day retention, `DeployNewWorkspace=true`) confirmed both the
 retention and `sku.lastSkuUpdate` came back untouched after redeploying.
 

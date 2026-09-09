@@ -206,7 +206,7 @@ printf '%s' "$out" | grep -q "InvalidResourceLocation" && [ "${records:-x}" = 0 
 
 echo
 if [ "$fails" -eq 0 ]; then
-    echo "All six deployment paths behaved as asserted."
+    echo "All eight deployment paths behaved as asserted."
 else
     echo "$fails assertion(s) failed."
 fi
