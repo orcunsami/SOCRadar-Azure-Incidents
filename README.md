@@ -36,8 +36,8 @@ Alarms and audit events are also written to custom Log Analytics tables. Hunting
 
 ## Prerequisites
 
-- Microsoft Sentinel workspace -- point `WorkspaceName` at an existing one, or set
-  `DeployNewWorkspace=true` to create it as part of this deployment
+- Microsoft Sentinel workspace -- `WorkspaceName` is either an existing workspace or a new
+  name; a new name is created as part of this deployment (`DeployNewWorkspace`, default `true`)
 - SOCRadar API key and Company ID
 
 ## Parameters
@@ -64,9 +64,9 @@ the deployment fail. If you are looking at a resource group in that state from a
 attempt, redeploying over it with the correct name reconciles it; the Logic App in it is
 billable until then, so disable it or delete the resource group.
 
-With `DeployNewWorkspace=true` a typo still does not fail: it creates a second, empty workspace
-under the misspelled name. The pre-check is skipped in that mode, because the workspace is not
-supposed to exist yet.
+With `DeployNewWorkspace` at its default `true` a typo does not fail: it creates a second,
+empty workspace under the misspelled name. The pre-check is skipped in that mode, because the
+workspace may not exist yet. Set it `false` when the workspace must already exist.
 
 ### Redeploy to fix a failed deployment -- do not delete the Logic Apps first
 
@@ -137,7 +137,7 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `WorkspaceResourceGroup` | deployment RG | Set if workspace is in a different RG. Changes what gets deployed -- see [Cross-Region / Cross-RG](#cross-region--cross-rg) |
-| `DeployNewWorkspace` | `false` | Create `WorkspaceName` instead of using an existing one. The workspace resource states no workspace-level settings, so leaving this `false` against an existing workspace never touches its pricing tier, retention or daily cap -- and setting it `true` by mistake is harmless for the same reason. Ignored when `WorkspaceResourceGroup` is not the deployment RG. |
+| `DeployNewWorkspace` | `true` | Create `WorkspaceName` when it does not exist yet. An existing workspace of that name is left as it is: the workspace resource states no settings, and a live check found tags, pricing tier, retention, daily cap and feature flags unchanged after redeploying. `false` requires the workspace to exist and fails on a misspelled name before anything is created. Ignored when `WorkspaceResourceGroup` is not the deployment RG. An existing workspace in a region other than `WorkspaceLocation` fails with `InvalidResourceLocation` and nothing is created -- set `WorkspaceLocation` to its region. |
 | `SentinelRoleLevel` | `Responder` | `Responder` (least-privilege) or `Contributor` |
 | `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window and the Sync lookback |
 | `InitialLookbackMinutes` | `600` | Lookback window when there is no checkpoint yet (10 hours) |
@@ -194,7 +194,7 @@ upgrade if you had turned it off.
 - **SOCRadar Dashboard** workbook (optional, needs the alarms table)
 - **Five hunting queries** under **Microsoft Sentinel > Hunting** (see [Hunting Queries](#hunting-queries))
 - Data Collection Endpoint and Rules for custom tables
-- **Workspace** -- only when `DeployNewWorkspace=true`, with the subscription default tier
+- **Workspace** -- when `DeployNewWorkspace=true` (default) and no workspace of that name exists in the deployment RG, with the subscription default tier; an existing one is left untouched
 - **Microsoft Sentinel onboarding** -- applied whenever the workspace is in the deployment RG, new or existing
 - Role assignments giving each Logic App identity least privilege: Log Analytics Reader,
   Monitoring Metrics Publisher on each DCR, Storage Table Data Contributor on the checkpoint
