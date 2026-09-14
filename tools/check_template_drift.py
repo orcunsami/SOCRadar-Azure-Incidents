@@ -17,6 +17,14 @@ History of the write-guard check (corrected 2026-09-04):
     replacement check compared an empty runAfter with an empty runAfter, so it
     could never fail. The original expression comparison is restored below and the
     placement check now names the guard itself.
+
+Adaptation notes:
+  - This repo has a 7th template, Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json,
+    with no counterpart in azuredeploy.json (it is deployed separately because it
+    needs its own IoC API key). It is intentionally excluded from the root-vs-standalone
+    comparisons below -- there is nothing in root to diff it against. It is still
+    covered by the JSON-parse and PT1H sweeps in the workflow / this script.
+
 Run:  python3 tools/check_template_drift.py
 """
 
@@ -33,8 +41,9 @@ ALARMS_INFRA = os.path.join(REPO, "Playbooks", "SOCRadar-Alarms-Infrastructure",
 AUDIT_INFRA = os.path.join(REPO, "Playbooks", "SOCRadar-Audit-Infrastructure", "azuredeploy.json")
 
 # Every azuredeploy.json in the repo, including the ones not compared below
-# (Workbook has no workflow/DCR to drift).
+# (IOC-Enrichment has no root counterpart, Workbook has no workflow/DCR to drift).
 ALL_TEMPLATES = [ROOT, IMPORT, SYNC, ALARMS_INFRA, AUDIT_INFRA,
+                  os.path.join(REPO, "Playbooks", "SOCRadar-IOC-Enrichment", "azuredeploy.json"),
                   os.path.join(REPO, "Playbooks", "SOCRadar-Workbook", "azuredeploy.json")]
 
 
@@ -310,8 +319,8 @@ def main():
             request_body(mod_import, "Log_Audit_Event"))
 
     # Redaction: every data collection rule in root and the standalone infrastructure
-    # playbooks must keep the pack() allow-list. Workbook has no DCR and is not part
-    # of this sweep.
+    # playbooks must keep the pack() allow-list. IOC-Enrichment and Workbook have no
+    # DCR and are not part of this sweep.
     for label, path in (("root", ROOT), ("alarms infrastructure", ALARMS_INFRA), ("audit infrastructure", AUDIT_INFRA)):
         for kql in transforms(load(path)):
             if not kql or "pack(" not in kql:
@@ -564,7 +573,7 @@ def main():
 
     # Bounded retries and loops, so a failing API call cannot stall the integration.
     # Swept across every template in the repo (not just root/import/sync) -- this is a
-    # cheap regression net.
+    # cheap regression net and IOC-Enrichment also calls an external API.
     for path in ALL_TEMPLATES:
         raw = open(path).read()
         if '"PT1H"' in raw:
