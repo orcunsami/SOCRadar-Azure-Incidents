@@ -8,8 +8,9 @@ carries every field a consumer reads, so the required field set is DERIVED from 
 consumers here rather than hard-coded. Add a consumer that reads a new field and this
 test fails until the projection carries it.
 
-Also guards the loop-exit path: when the query fails the loop must stop and the run
-must be marked incomplete, instead of replaying the same failing call.
+Also guards the loop-exit path: when any step of the page fetch fails the loop must
+stop and the run must be marked incomplete, instead of replaying the same failing
+call. The guard is derived from the accumulator's own gate, not from an action name.
 """
 import json
 import re
@@ -105,7 +106,24 @@ for path in TEMPLATES:
     check(flag is not None, f"{path}: no truncation flag on a failed page")
     check(stop is not None, f"{path}: no loop-exit on a failed page")
     if flag and stop:
-        triggers = set(flag["runAfter"].get("Query_Incidents_Page", []))
+        # The flag must hang off the SAME action that gates the accumulator, so every
+        # terminal state of that action is handled: Succeeded -> accumulate, anything
+        # else -> flag and leave the loop. Hanging it off an earlier action leaves the
+        # gap the accumulator sits in (a page that is queried fine but not projected
+        # never reaches Compose, never clears next_link, and the loop replays it until
+        # the Until limit). Derived, not named, so inserting another action into the
+        # chain moves the requirement with it.
+        gate = list(loop["Compose_New_Incidents"]["runAfter"])
+        check(
+            len(gate) == 1,
+            f"{path}: the accumulator must be gated by exactly one action, got {sorted(gate)}",
+        )
+        check(
+            set(flag["runAfter"]) == set(gate),
+            f"{path}: the flag must fire off {gate}, not {sorted(flag['runAfter'])} "
+            f"(runAfter with several predecessors is an AND, so an earlier one blocks it)",
+        )
+        triggers = set(flag["runAfter"].get(gate[0], []))
         check(
             {"Failed", "TimedOut", "Skipped"} <= triggers,
             f"{path}: the truncation flag must fire on Failed/TimedOut/Skipped, got {sorted(triggers)}",

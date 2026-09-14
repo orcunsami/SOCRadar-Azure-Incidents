@@ -515,7 +515,7 @@
                                 },
                                 "Flag_Incidents_Query_Failed": {
                                     "runAfter": {
-                                        "Query_Incidents_Page": [
+                                        "Project_Incidents_Page": [
                                             "Failed",
                                             "TimedOut",
                                             "Skipped"
