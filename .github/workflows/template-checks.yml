@@ -75,6 +75,9 @@ jobs:
       - name: Every SecurityIncident query collapses to the newest version
         run: python3 tests/test_incident_dedup.py
 
+      - name: Existing-incident page is projected to the fields its consumers read
+        run: python3 tests/test_incident_dedup_projection.py
+
       - name: No secrets in tracked files
         run: |
           set -e

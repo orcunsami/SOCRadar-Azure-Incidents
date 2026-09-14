@@ -470,9 +470,9 @@
                                 },
                                 "Compose_New_Incidents": {
                                     "type": "Compose",
-                                    "inputs": "@union(variables('existing_incidents'), coalesce(body('Query_Incidents_Page')?['value'], json('[]')))",
+                                    "inputs": "@union(variables('existing_incidents'), body('Project_Incidents_Page'))",
                                     "runAfter": {
-                                        "Query_Incidents_Page": [
+                                        "Project_Incidents_Page": [
                                             "Succeeded"
                                         ]
                                     }
@@ -499,6 +499,44 @@
                                         "Set_Existing_Incidents": [
                                             "Succeeded"
                                         ]
+                                    }
+                                },
+                                "Project_Incidents_Page": {
+                                    "runAfter": {
+                                        "Query_Incidents_Page": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Select",
+                                    "inputs": {
+                                        "from": "@coalesce(body('Query_Incidents_Page')?['value'], json('[]'))",
+                                        "select": "@setProperty(setProperty(json('{}'), 'id', coalesce(item()?['id'], '')), 'properties', setProperty(setProperty(json('{}'), 'title', coalesce(item()?['properties']?['title'], '')), 'additionalData', setProperty(json('{}'), 'bookmarksCount', coalesce(item()?['properties']?['additionalData']?['bookmarksCount'], 0))))"
+                                    }
+                                },
+                                "Flag_Incidents_Query_Failed": {
+                                    "runAfter": {
+                                        "Query_Incidents_Page": [
+                                            "Failed",
+                                            "TimedOut",
+                                            "Skipped"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "incidents_truncated",
+                                        "value": true
+                                    }
+                                },
+                                "Stop_Incidents_Pagination": {
+                                    "runAfter": {
+                                        "Flag_Incidents_Query_Failed": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "incidents_next_link",
+                                        "value": ""
                                     }
                                 }
                             },
