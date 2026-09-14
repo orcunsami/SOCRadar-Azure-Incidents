@@ -78,6 +78,9 @@ jobs:
       - name: Existing-incident page is projected to the fields its consumers read
         run: python3 tests/test_incident_dedup_projection.py
 
+      - name: Domain entities use a real TLD whitelist, not a two-letter catch-all
+        run: python3 tests/test_domain_tld_whitelist.py
+
       - name: No secrets in tracked files
         run: |
           set -e
