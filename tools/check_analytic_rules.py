@@ -36,6 +36,7 @@ KQL_WORDS = {
     "isnotnull", "coalesce", "iff", "iif", "case", "bin", "parse_json",
     "array_length", "materialize", "datetime", "timespan", "true", "false",
     "d", "h", "m", "s", "print", "mv_expand", "evaluate", "narrow",
+    "kind", "leftouter", "real", "null",
 }
 
 # Techniques used by this repo, mapped to their ATT&CK tactics. Azure rejects a
@@ -133,6 +134,11 @@ def check_rule(path, schemas):
                         f"'{column}' is compared to \"{literal}\" but SOCRadar sends "
                         f"\"{literal.upper()}\"; the rule would match nothing"
                     )
+
+    # This repo ships no data connector definition, so a connectorId here names something
+    # that does not exist and the rule shows a broken data-connector requirement.
+    if rule.get("requiredDataConnectors"):
+        problems.append("requiredDataConnectors must be [] : this repo defines no data connector")
 
     tactics = set(rule.get("tactics", []))
     for technique in rule.get("relevantTechniques", []):

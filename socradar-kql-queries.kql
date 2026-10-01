@@ -165,10 +165,9 @@ SOCRadar_Alarms_CL
 | join kind=leftouter (
     SecurityIncident
     | summarize arg_max(TimeGenerated, *) by IncidentNumber
-    | where Status != "Closed"
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
 ) on AlarmId
-| where Status1 != "Closed" or isnull(Status1)
+| where isempty(Status1) or Status1 != "Closed"
 | project
     AlarmId,
     Severity,

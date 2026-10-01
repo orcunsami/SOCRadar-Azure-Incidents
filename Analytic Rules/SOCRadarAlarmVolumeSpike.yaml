@@ -1,13 +1,10 @@
 id: 4a7b3c9e-2d15-4e8f-b6a3-9c2e7d5a1b4f
 name: SOCRadar Alarm Volume Spike
 description: |
-  'Detects unusual spikes in SOCRadar alarm volume that may indicate an active campaign, coordinated attack, or data breach. Triggers when alarm count in the last hour exceeds the 7-day hourly average by more than 3x.'
+  'Detects unusual spikes in SOCRadar alarm volume that may indicate an active campaign, coordinated attack, or data breach. Triggers when the count of one alarm type in the last hour exceeds the 7-day hourly average of that type by more than 3x and is above 5.'
 severity: Medium
 status: Available
-requiredDataConnectors:
-  - connectorId: SOCRadarAlarms
-    dataTypes:
-      - SOCRadar_Alarms_CL
+requiredDataConnectors: []
 queryFrequency: 1h
 queryPeriod: 7d
 triggerOperator: gt
@@ -21,14 +18,14 @@ relevantTechniques:
 query: |
     let baseline = SOCRadar_Alarms_CL
     | where TimeGenerated > ago(7d) and TimeGenerated < ago(1h)
-    | summarize AvgHourly = count() / 168.0;
-    let recent = SOCRadar_Alarms_CL
+    | summarize AvgHourly = count() / 168.0 by AlarmMainType;
+    SOCRadar_Alarms_CL
     | where TimeGenerated > ago(1h)
-    | summarize RecentCount = count() by AlarmMainType;
-    recent
-    | extend BaselineAvg = toscalar(baseline)
+    | summarize RecentCount = count() by AlarmMainType
+    | join kind=leftouter baseline on AlarmMainType
+    | extend BaselineAvg = coalesce(AvgHourly, 0.0)
     | where RecentCount > (BaselineAvg * 3) and RecentCount > 5
-    | extend SpikeRatio = round(RecentCount / BaselineAvg, 2)
+    | extend SpikeRatio = iff(BaselineAvg > 0, round(RecentCount / BaselineAvg, 2), real(null))
     | extend timestamp = now()
     | extend AccountName = AlarmMainType
 entityMappings:
@@ -36,5 +33,5 @@ entityMappings:
     fieldMappings:
       - identifier: Name
         columnName: AccountName
-version: 1.0.0
+version: 1.0.1
 kind: Scheduled

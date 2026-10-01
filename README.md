@@ -30,6 +30,12 @@ flowchart LR
     B --> C["SOCRadar Platform<br/>status update"]
 ```
 
+Sync looks at closed SOCRadar incidents modified in the last 24 hours that do not have the `Synced` label
+yet, so a closure whose write failed, or that happened while Sync was off, is retried on every
+run until it goes through. An incident closed more than 24 hours before Sync could write it is
+not retried. If a page of that incident query fails, the run ends Failed (`SyncIncomplete`)
+and the next run starts over.
+
 ### Analytics
 
 Alarms and audit events are also written to custom Log Analytics tables. Hunting queries, analytic rules, and the workbook read from them. All three (audit, alarms table, workbook) are toggleable at deploy time.
@@ -51,7 +57,7 @@ Deploy `Playbooks/SOCRadar-IOC-Enrichment/azuredeploy.json` on its own:
 
 Notes:
 
-- `SocradarApiKey` is your normal company key (same one used by Import/Sync), used here to fetch the original alarm's related entities. IOC enrichment itself needs a **separate** key with the **IOC Enrichment** entitlement (Standard Licensed APIs / advanced tier -- contact integration@socradar.io). Set `SocradarIocApiKey` to that key; leave it empty to reuse `SocradarApiKey` for enrichment too. If the key used for enrichment lacks the entitlement, calls return HTTP 402 and nothing is enriched; the playbook then posts a single summary comment saying so.
+- `SocradarApiKey` is your normal company key (same one used by Import/Sync), used here to fetch the original alarm's related entities. IOC enrichment itself needs a **separate** key with the **IOC Enrichment** entitlement (Standard Licensed APIs / advanced tier -- contact integration@socradar.io). Set `SocradarIocApiKey` to that key; leave it empty to reuse `SocradarApiKey` for enrichment too. If the key used for enrichment lacks the entitlement, calls return HTTP 402 and nothing is enriched; the playbook then posts a single summary comment that lists the indicators under "Not enriched". It does not name the cause, so look for HTTP 402 in the run history.
 - `MaxIndicators` (default `20`) caps how many indicators one incident enriches. Each enrichment spends one SOCRadar API credit, and an alarm incident can carry 100 entities, so raise it only if your credit budget allows.
 - `RiskScoreThreshold` (default `0`) -- only comments when the score is at or above this value. Benign whitelisted indicators scoring 0 are skipped.
 - Indicators that are still being looked up (HTTP 202) or that failed are collected into one summary comment instead of one comment each.
@@ -77,7 +83,6 @@ Notes:
 | Parameter | Description |
 |-----------|-------------|
 | `WorkspaceName` | Microsoft Sentinel workspace name (not the GUID) |
-| `WorkspaceLocation` | Workspace region (e.g., `northeurope`) |
 | `SocradarApiKey` | Your SOCRadar API key |
 | `CompanyId` | Your SOCRadar company ID |
 
@@ -166,10 +171,11 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `WorkspaceLocation` | RG region | Workspace region (e.g., `northeurope`). Defaults to the resource group's region, which is wrong whenever the workspace lives elsewhere -- see [Cross-Region / Cross-RG](#cross-region--cross-rg) |
 | `WorkspaceResourceGroup` | deployment RG | Set if workspace is in a different RG. Changes what gets deployed -- see [Cross-Region / Cross-RG](#cross-region--cross-rg) |
 | `DeployNewWorkspace` | `true` | Create `WorkspaceName` when it does not exist yet. An existing workspace of that name is left as it is: the workspace resource states no settings, and a live check found tags, pricing tier, retention, daily cap and feature flags unchanged after redeploying. `false` requires the workspace to exist and fails on a misspelled name before anything is created. Ignored when `WorkspaceResourceGroup` is not the deployment RG. An existing workspace in a region other than `WorkspaceLocation` fails with `InvalidResourceLocation` and nothing is created -- set `WorkspaceLocation` to its region. |
-| `SentinelRoleLevel` | `Responder` | `Responder` (least-privilege) or `Contributor` |
-| `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window and the Sync lookback |
+| `SentinelRoleLevel` | `Responder` | `Responder` (least-privilege) or `Contributor`. Does not apply to the Import identity while `EnableIoCEnrichment` is `true`: it gets Contributor so it can add entities. Sync stays on this role |
+| `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window |
 | `InitialLookbackMinutes` | `600` | Lookback window when there is no checkpoint yet (10 hours) |
 | `ImportAllStatuses` | `false` | `true` imports RESOLVED / FALSE_POSITIVE / MITIGATED too, as already-closed incidents -- see [Importing closed alarms](#importing-closed-alarms) |
 | `IncidentMode` | `Direct` | `Direct` creates the incidents from the import Logic App. `AlertBacked` writes the alarms to `SOCRadar_Alarms_CL` and a scheduled analytics rule raises one alert and one incident per alarm, which is what makes them show up in the Microsoft Defender portal -- see [Incident mode](#incident-mode) |
@@ -494,7 +500,7 @@ Import**, then select the files. The first two need `EnableAlarmsTable=true`.
 | Rule | Fires when |
 |---|---|
 | `SOCRadarCriticalAlarmDetection.yaml` | An open alarm arrives with HIGH or CRITICAL severity |
-| `SOCRadarAlarmVolumeSpike.yaml` | Hourly alarm count for a type exceeds 3x its 7-day average |
+| `SOCRadarAlarmVolumeSpike.yaml` | Hourly alarm count for a type exceeds 3x that type's 7-day hourly average and is above 5 |
 | `SOCRadarUnsyncedClosedIncident.yaml` | A closed SOCRadar incident still has no Synced label after 30 minutes |
 
 ## Cross-Region / Cross-RG
@@ -564,6 +570,5 @@ The same integration is also available as a Microsoft Sentinel Solution via **Co
 
 ## Support
 
-- **Public Documentation:** [One-Click Deployment Guide](https://github.com/Radargoger/azure-one-click-documentations/blob/main/azureincidents.md)
 - **Detailed Documentation (SOCRadar customers):** [Microsoft Azure Sentinel Integration (Bi-Directional)](https://help.socradar.io/hc/en-us/articles/41316851769745-Microsoft-Azure-Sentinel-Integration-Bi-Directional)
 - **Support email:** integration@socradar.io

@@ -1,12 +1,12 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.0.0.0",
+    "contentVersion": "1.0.0",
     "metadata": {
         "title": "SOCRadar Alarms for Microsoft Sentinel",
-        "description": "Bidirectional integration: Import SOCRadar alarms to Microsoft Sentinel, sync closed incidents back to SOCRadar. Includes optional audit logging, custom alarms table for analytics, and Workbook dashboard.",
+        "description": "Bidirectional integration: Import SOCRadar alarms to Microsoft Sentinel (direct or alert-backed incidents), sync closed incidents and a raise-only severity back to SOCRadar. Includes optional IoC enrichment, audit logging, custom alarms table for analytics, and Workbook dashboard.",
         "version": "1.0.0",
         "author": "SOCRadar",
-        "lastUpdateTime": "2026-02-20T00:00:00.000Z"
+        "lastUpdateTime": "2026-10-01T00:00:00.000Z"
     },
     "parameters": {
         "WorkspaceName": {
@@ -660,7 +660,7 @@
                 "eTag": "*",
                 "displayName": "SOCRadar Alarm Overview",
                 "category": "Hunting Queries",
-                "query": "SOCRadar_Alarms_CL\n| summarize Count=count() by AlarmMainType, Severity\n| order by Count desc\n",
+                "query": "SOCRadar_Alarms_CL\n| summarize Count=dcount(AlarmId) by AlarmMainType, Severity\n| order by Count desc\n",
                 "version": 2,
                 "tags": [
                     {
@@ -3221,7 +3221,7 @@
                     "actions": {
                         "Calculate_Lookback_Time": {
                             "type": "Compose",
-                            "inputs": "@addMinutes(utcNow(), mul(-2, parameters('PollingIntervalMinutes')))",
+                            "inputs": "@addHours(utcNow(), -24)",
                             "runAfter": {}
                         },
                         "Initialize_Closed_Incidents": {
@@ -3254,6 +3254,23 @@
                             },
                             "runAfter": {
                                 "Initialize_Closed_Incidents": [
+                                    "Succeeded"
+                                ]
+                            }
+                        },
+                        "Initialize_Closed_Query_Failed": {
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "closed_query_failed",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Initialize_Closed_NextLink": [
                                     "Succeeded"
                                 ]
                             }
@@ -3315,17 +3332,57 @@
                                             "Succeeded"
                                         ]
                                     }
+                                },
+                                "Flag_Closed_Query_Failed": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "closed_query_failed",
+                                        "value": true
+                                    },
+                                    "runAfter": {
+                                        "Compose_New_Closed": [
+                                            "Failed",
+                                            "TimedOut",
+                                            "Skipped"
+                                        ]
+                                    }
+                                },
+                                "Stop_Closed_Pagination": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "closed_next_link",
+                                        "value": ""
+                                    },
+                                    "runAfter": {
+                                        "Flag_Closed_Query_Failed": [
+                                            "Succeeded"
+                                        ]
+                                    }
                                 }
                             },
                             "runAfter": {
-                                "Initialize_Closed_NextLink": [
+                                "Initialize_Closed_Query_Failed": [
                                     "Succeeded"
+                                ]
+                            }
+                        },
+                        "Filter_Unsynced": {
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@variables('closed_incidents')",
+                                "where": "@not(contains(string(coalesce(item()?['properties']?['labels'], json('[]'))), 'Synced'))"
+                            },
+                            "runAfter": {
+                                "Pagination_Loop_Closed": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
                                 ]
                             }
                         },
                         "For_Each_Incident": {
                             "type": "Foreach",
-                            "foreach": "@variables('closed_incidents')",
+                            "foreach": "@body('Filter_Unsynced')",
                             "runtimeConfiguration": {
                                 "concurrency": {
                                     "repetitions": 5
@@ -3728,8 +3785,44 @@
                                 }
                             },
                             "runAfter": {
-                                "Pagination_Loop_Closed": [
+                                "Filter_Unsynced": [
                                     "Succeeded"
+                                ]
+                            }
+                        },
+                        "Check_Closed_Query_Failed": {
+                            "type": "If",
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@variables('closed_query_failed')",
+                                            true
+                                        ]
+                                    }
+                                ]
+                            },
+                            "actions": {
+                                "Fail_Incomplete_Sync": {
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runStatus": "Failed",
+                                        "runError": {
+                                            "code": "SyncIncomplete",
+                                            "message": "A page of the closed-incidents query in Pagination_Loop_Closed failed, so Sync worked from an incomplete list. Incidents it missed stay inside the 24 hour lookback and are retried on the next run. Open Query_Closed_Page in this run to see what failed."
+                                        }
+                                    },
+                                    "runAfter": {}
+                                }
+                            },
+                            "else": {
+                                "actions": {}
+                            },
+                            "runAfter": {
+                                "For_Each_Incident": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
                                 ]
                             }
                         }

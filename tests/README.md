@@ -19,6 +19,13 @@ shape and never runs a workflow action.
 | `test_management_base_url.py` | No template hardcodes the public-cloud ARM host |
 | `test_hunting_queries.py` | Every column the hunting queries read is one the deployment creates |
 | `test_cross_rg_roles.py` | The cross-RG nested role assignments grant the import identity the same elevated role the same-RG path grants, so IoC enrichment does not silently 403 when the workspace lives in another resource group |
+| `test_import_integrity.py` | The import cannot lose alarms or duplicate incidents silently |
+| `test_incident_dedup.py` | Every `SecurityIncident` query collapses to the newest version of each incident |
+| `test_incident_dedup_projection.py` | The existing-incident page is projected to the fields its consumers read |
+| `test_domain_tld_whitelist.py` | Domain entities are matched against real country codes, not any two letters |
+| `test_alert_backed_mode.py` | Alert-backed mode: rule limits, import cap, checkpoint and the Sync entity reader |
+| `test_sync_window.py` | Sync reaches back 24 hours, drops synced incidents before the loop, and a failed page fails the run |
+| `test_query_logic.py` | The volume-spike rule, the not-yet-closed query and the Alarm Overview query do what the README says |
 
 Run them all locally:
 

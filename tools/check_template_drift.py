@@ -173,6 +173,13 @@ def main():
 
     failures = []
 
+    # A standalone repo ships contentVersion 1.0.0 in every template; the 4-part form is
+    # for the Content Hub fork only (rules/arm-templates.md). The root had 1.0.0.0.
+    for path in ALL_TEMPLATES:
+        version = load(path).get("contentVersion")
+        if version != "1.0.0":
+            failures.append(f"{os.path.relpath(path, REPO)}: contentVersion is {version!r}, expected '1.0.0'")
+
     def compare(label, left, right):
         if left is None or right is None:
             failures.append(f"{label}: missing on one side (root={left is not None}, standalone={right is not None})")
