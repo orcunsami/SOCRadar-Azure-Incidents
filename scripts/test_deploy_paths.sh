@@ -23,6 +23,7 @@
 #
 # Run before pushing any change to the resource graph of azuredeploy.json.
 set -uo pipefail
+{ set +x; } 2>/dev/null   # xtrace would print the API key
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -32,6 +33,17 @@ LOCATION="${TEST_LOCATION:-westeurope}"
 COMPANY_ID="${TEST_COMPANY_ID:?set TEST_COMPANY_ID}"
 API_KEY="${TEST_SOCRADAR_API_KEY:?set TEST_SOCRADAR_API_KEY}"
 KEEP="${KEEP_RESOURCES:-false}"
+
+# API key goes in a 0600 file, not argv (visible in ps). Removed on any exit.
+PARAMS_FILE=$(umask 077; mktemp)
+trap 'rm -f "$PARAMS_FILE"' EXIT   # no ERR: this script runs without set -e, ERR would fire early
+trap 'exit 130' INT
+trap 'exit 143' TERM
+API_KEY="$API_KEY" python3 -c '
+import json, os
+print(json.dumps({"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {"SocradarApiKey": {"value": os.environ["API_KEY"]}}}))' > "$PARAMS_FILE"
 
 SFX=$(python3 -c "import uuid;print(uuid.uuid4().hex[:4])")
 RG_APP="rg-deploy-paths-$SFX"
@@ -46,6 +58,7 @@ row() {  # row <name> <PASS|FAIL> <detail>
 }
 
 cleanup() {
+    rm -f "$PARAMS_FILE"
     if [ "$KEEP" = true ]; then
         echo "KEEP_RESOURCES=true, leaving $RG_APP, $RG_WS, ${RG_BARE:-} and ${RG_E:-} in place"
         return
@@ -63,7 +76,7 @@ start_time() { python3 -c "import datetime;print((datetime.datetime.now(datetime
 deploy() {  # deploy <rg> <name> <extra params...>
     local rg="$1" name="$2"; shift 2
     az deployment group create -g "$rg" -n "$name" --template-file "$TEMPLATE" \
-        --parameters CompanyId="$COMPANY_ID" SocradarApiKey="$API_KEY" \
+        --parameters CompanyId="$COMPANY_ID" @"$PARAMS_FILE" \
                      WorkspaceLocation="$LOCATION" _triggerStartTime="$(start_time)" "$@" \
         -o none 2>/dev/null
 }
@@ -164,7 +177,7 @@ left=$(az resource list -g "$RG_E" --query "length(@)" -o tsv 2>/dev/null)
 
 echo "[7/7] Path F: AlertBacked cross-RG ..."
 out=$(az deployment group create -g "$RG_E" -n path-f --template-file "$TEMPLATE" \
-        --parameters CompanyId="$COMPANY_ID" SocradarApiKey="$API_KEY" \
+        --parameters CompanyId="$COMPANY_ID" @"$PARAMS_FILE" \
                      WorkspaceLocation="$LOCATION" _triggerStartTime="$(start_time)" \
                      WorkspaceName="$WS" WorkspaceResourceGroup="$RG_WS" \
                      DeployNewWorkspace=false IncidentMode=AlertBacked -o none 2>&1)
@@ -189,7 +202,7 @@ before=$(az monitor log-analytics workspace show -g "$RG_E" -n "$WS_G" --query "
 # ARM's pre-flight validation rejects this before a deployment record exists (measured:
 # `az deployment group list` stays empty), so the error is only in the CLI output.
 out=$(az deployment group create -g "$RG_E" -n path-g --template-file "$TEMPLATE" \
-    --parameters CompanyId="$COMPANY_ID" SocradarApiKey="$API_KEY" _triggerStartTime="$(start_time)" \
+    --parameters CompanyId="$COMPANY_ID" @"$PARAMS_FILE" _triggerStartTime="$(start_time)" \
                  WorkspaceName="$WS_G" WorkspaceResourceGroup="$RG_E" -o none 2>&1)
 records=$(az deployment group list -g "$RG_E" --query "[?name=='path-g'] | length(@)" -o tsv 2>/dev/null)
 left=$(az resource list -g "$RG_E" --query "length(@)" -o tsv 2>/dev/null)
