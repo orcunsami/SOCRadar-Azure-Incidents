@@ -222,23 +222,44 @@ upgrade if you had turned it off.
 
 No redeployment needed. The key is the `SocradarApiKey` parameter of the two Logic Apps
 (`SOCRadar-Alarm-Import`, `SOCRadar-Alarm-Sync`); there is no Key Vault or connection behind it.
-Change it in both. The portal never shows the stored key: it is a secure parameter and appears
-as `{}`. Saving without touching that line keeps the old key.
+Change it in both.
 
-**Portal.** Open the Logic App > **Development Tools > Logic app code view**. Near the end of the
-file, in the top-level `"parameters"` block, find
+### Azure portal
 
-```json
-"SocradarApiKey": {},
-```
+1. Open the Logic App: **Resource groups > your resource group > SOCRadar-Alarm-Import**.
+2. In the left menu, under **Development Tools**, open **Logic app code view**.
+3. Search the editor for `SocradarApiKey` (`Cmd+F` / `Ctrl+F`). It appears twice. Leave the first
+   one, inside `"definition"` (`"type": "SecureString"`). Use the second one, in the top-level
+   `"parameters"` block near the end of the file:
+   ```json
+   "SocradarApiKey": {},
+   ```
+4. Put the new key in it:
+   ```json
+   "SocradarApiKey": {"value": "<new key>"},
+   ```
+5. Click **Save**. The portal confirms *Successfully saved workflow*.
+6. The line goes back to `{}`. That is expected: the portal never shows a stored key, and saving
+   without touching the line keeps the old key.
+7. Repeat steps 1-6 for `SOCRadar-Alarm-Sync`.
 
-and change it to `"SocradarApiKey": {"value": "<new key>"},`, then **Save**. Leave the
-`"SocradarApiKey": {"type": "SecureString"}` entry inside `"definition"` alone. After saving, the
-line shows `{}` again. Repeat for the other Logic App.
+### Check that it worked
 
-**Azure CLI.** Logic App `PATCH` does not accept the parameter and `az logic workflow update` has
-no parameter option, so read the Logic App, change the one value and `PUT` it back. Run it once
-per Logic App:
+The Logic Apps run every `PollingIntervalMinutes` (5 by default), so the next scheduled run uses
+the new key. To not wait, open the Logic App **Overview** and use **Run trigger**. Open the run
+under **Run history**: a run that was already in progress finishes with the old key. HTTP 401
+means the key does not belong to this company, 402 means no credit, an inactive key or an invalid
+key. The key is not written to the run history: every action that sends it has its inputs hidden.
+Nothing runs while a Logic App is **Disabled**.
+
+If you installed the IoC Enrichment playbook, it has its own `SocradarApiKey` (and an optional
+`SocradarIocApiKey`); change them the same way.
+
+### Azure CLI
+
+Same result without the portal. Logic App `PATCH` does not accept the parameter and
+`az logic workflow update` has no parameter option, so read the Logic App, change the one value
+and `PUT` it back. Run it once per Logic App:
 
 ```bash
 RG=<resource-group>; NAME=SOCRadar-Alarm-Import   # then SOCRadar-Alarm-Sync
@@ -257,16 +278,9 @@ az rest --method PUT --uri "$URI" --body @/tmp/body.json --query properties.prov
 rm -f /tmp/wf.json /tmp/body.json; unset NEWKEY
 ```
 
-The CLI route keeps the new key in `/tmp/body.json` until the last `rm`. Keep `identity` in the
+The script keeps the new key in `/tmp/body.json` until the last `rm`. Keep `identity` in the
 body: the role assignments belong to that managed identity. The state (`Enabled` or `Disabled`)
 is kept as it was.
-
-Either way, a run already in progress finishes with the old key and the next run uses the new
-one. The key is not written to the run history: every action that sends it has its inputs
-hidden. Check the next run in **Runs history**: HTTP 401 means the key
-does not belong to this company, 402 means no credit, an inactive key or an invalid key.
-If you installed the IoC Enrichment playbook, it has its own `SocradarApiKey` (and an optional
-`SocradarIocApiKey`); change them the same way.
 
 ## What Gets Deployed
 
