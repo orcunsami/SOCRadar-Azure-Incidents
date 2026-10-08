@@ -218,6 +218,56 @@ to `true`, which restores v1.0.0's always-write behaviour with one difference, t
 guard, so a SOCRadar CRITICAL alarm is never lowered to High. Pass `SyncSeverity=false` on the
 upgrade if you had turned it off.
 
+## Rotating the API key
+
+No redeployment needed. The key is the `SocradarApiKey` parameter of the two Logic Apps
+(`SOCRadar-Alarm-Import`, `SOCRadar-Alarm-Sync`); there is no Key Vault or connection behind it.
+Change it in both. The portal never shows the stored key: it is a secure parameter and appears
+as `{}`. Saving without touching that line keeps the old key.
+
+**Portal.** Open the Logic App > **Development Tools > Logic app code view**. Near the end of the
+file, in the top-level `"parameters"` block, find
+
+```json
+"SocradarApiKey": {},
+```
+
+and change it to `"SocradarApiKey": {"value": "<new key>"},`, then **Save**. Leave the
+`"SocradarApiKey": {"type": "SecureString"}` entry inside `"definition"` alone. After saving, the
+line shows `{}` again. Repeat for the other Logic App.
+
+**Azure CLI.** Logic App `PATCH` does not accept the parameter and `az logic workflow update` has
+no parameter option, so read the Logic App, change the one value and `PUT` it back. Run it once
+per Logic App:
+
+```bash
+RG=<resource-group>; NAME=SOCRadar-Alarm-Import   # then SOCRadar-Alarm-Sync
+read -rs NEWKEY; export NEWKEY
+URI="https://management.azure.com$(az logic workflow show -g $RG -n $NAME --query id -o tsv)?api-version=2019-05-01"
+az rest --method GET --uri "$URI" > /tmp/wf.json
+python3 - <<'PY' > /tmp/body.json
+import json, os
+w = json.load(open("/tmp/wf.json")); p = w["properties"]
+p["parameters"]["SocradarApiKey"] = {"value": os.environ["NEWKEY"]}
+print(json.dumps({"location": w["location"], "tags": w.get("tags"), "identity": w["identity"],
+                  "properties": {"state": p["state"], "definition": p["definition"],
+                                 "parameters": p["parameters"]}}))
+PY
+az rest --method PUT --uri "$URI" --body @/tmp/body.json --query properties.provisioningState -o tsv
+rm -f /tmp/wf.json /tmp/body.json; unset NEWKEY
+```
+
+The CLI route keeps the new key in `/tmp/body.json` until the last `rm`. Keep `identity` in the
+body: the role assignments belong to that managed identity. The state (`Enabled` or `Disabled`)
+is kept as it was.
+
+Either way, a run already in progress finishes with the old key and the next run uses the new
+one. The key is not written to the run history: every action that sends it has its inputs
+hidden. Check the next run in **Runs history**: HTTP 401 means the key
+does not belong to this company, 402 means no credit, an inactive key or an invalid key.
+If you installed the IoC Enrichment playbook, it has its own `SocradarApiKey` (and an optional
+`SocradarIocApiKey`); change them the same way.
+
 ## What Gets Deployed
 
 - **SOCRadar-Alarm-Import** Logic App -- imports alarms as incidents
