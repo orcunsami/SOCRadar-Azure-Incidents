@@ -228,12 +228,12 @@ Change it in both.
 
 1. Open the Logic App: **Resource groups > your resource group > SOCRadar-Alarm-Import**.
 2. In the left menu, under **Development Tools**, open **Logic app code view**.
-3. Search the editor for `SocradarApiKey` (`Cmd+F` / `Ctrl+F`). It appears twice. Leave the first
-   one, inside `"definition"` (`"type": "SecureString"`). Use the second one, in the top-level
-   `"parameters"` block near the end of the file:
-   ```json
-   "SocradarApiKey": {},
+3. Press `Cmd+F` / `Ctrl+F` and search for this exact text, quotes and braces included:
    ```
+   "SocradarApiKey": {}
+   ```
+   It matches once, in the top-level `"parameters"` block near the end of the file. A search for
+   `SocradarApiKey` alone also hits the places that use the key; leave those as they are.
 4. Put the new key in it:
    ```json
    "SocradarApiKey": {"value": "<new key>"},
