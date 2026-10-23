@@ -79,15 +79,22 @@ for path in TEMPLATES:
 
     words = acts.get("Select_Detail_Words", {}).get("inputs", {})
     sel = words.get("select", "")
-    check(words.get("from") == f"@split(replace(take(coalesce({A}?['alarm_text'], ''), 1500), decodeUriComponent('%0A'), ' '), ' ')",
-          f"{name}: alarm text is not split into words")
+    # Tags are split off before the URL check, so '<link>http://...</link>' cannot pass as one URL word.
+    check(words.get("from") == f"@split(replace(replace(replace(take(coalesce({A}?['alarm_text'], ''), 1500), "
+                               f"decodeUriComponent('%0A'), ' '), '<', ' <'), '>', '> '), ' ')",
+          f"{name}: alarm text is not split into words with tags separated")
+    check(desc.endswith("'View in SOCRadar: https://platform.socradar.com/company/', parameters('CompanyId'), "
+                        f"'/alarm/', {A}?['alarm_id']), 5000)}}"),
+          f"{name}: SOCRadar link missing or changed")
     check(sel.startswith("@if(contains(item(), '://'), item(), "), f"{name}: URL words are escaped")
     for a, b in FULL:
         check(sel.count(f"{a}, {b}") == 1, f"{name}: alarm text escape {a} -> {b} missing or changed")
 
     det = acts.get("Details_Markdown", {}).get("inputs", "")
     check(det.startswith("@concat(take(join(body('Select_Detail_Words'), ' '), 1500), "), f"{name}: details not capped after escaping")
-    check(det.endswith(", '...', ''))"), f"{name}: details lost the truncation marker")
+    check(det.endswith(f"if(or(greater(length(coalesce({A}?['alarm_text'], '')), 1500), "
+                       "greater(length(join(body('Select_Detail_Words'), ' ')), 1500)), '...', ''))"),
+          f"{name}: details truncation marker missing or its condition changed")
 
     fc = acts.get("Format_Content", {}).get("actions", {})
     rows = fc.get("Select_Content_Rows", {}).get("inputs", {})
@@ -101,13 +108,19 @@ for path in TEMPLATES:
           f"{name}: cell cap 300 missing or changed")
     check(fc.get("Content_Table", {}).get("inputs", "").endswith(", 2600))"), f"{name}: table cap 2600 missing or changed")
     check(EMPTYC in fc.get("Content_Nodes", {}).get("inputs", ""), f"{name}: content nodes do not guard empty content")
+    check(fc.get("Content_Nodes", {}).get("inputs", "").endswith(", '}'))), '/r/*')"), f"{name}: content node path changed")
+    check(fc.get("Select_Content_Keys", {}).get("inputs", {}).get("select") == "@xpath(xml(item()), 'name(/*)')",
+          f"{name}: content keys are not read from the node names")
+    check(rsel.startswith("@concat('| ', replace(item(), '_', ' '), ' | ', ") and rsel.count(f"{A}?['content']?[item()]") == 25,
+          f"{name}: cell does not look up its value by the row key in every branch")
 
     md = acts.get("Content_Markdown", {})
     mdi = md.get("inputs", "")
     check(set(md.get("runAfter", {}).get("Format_Content", [])) == {"Succeeded", "Failed", "TimedOut", "Skipped"},
           f"{name}: a failed table build can stop the incident")
-    check(f"or(not(empty(outputs('Content_Table'))), {EMPTYC})" in mdi,
-          f"{name}: non-object content is not routed to the code block")
+    check(mdi.startswith(f"@if(and(equals(actions('Format_Content')?['status'], 'Succeeded'), "
+                         f"or(not(empty(outputs('Content_Table'))), {EMPTYC})), outputs('Content_Table'), "),
+          f"{name}: a built table is not shown, or non-object content is not routed to the code block")
     check(f"take(string({A}?['content']), 2000)" in mdi and mdi.count("```") == 2, f"{name}: code block fallback missing or uncapped")
 
 check(len(copies) == 2 and copies[0] == copies[1], "root and playbook import actions differ")

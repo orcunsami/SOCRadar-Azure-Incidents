@@ -1956,7 +1956,7 @@
                                                                         "type": "Select",
                                                                         "runAfter": {},
                                                                         "inputs": {
-                                                                            "from": "@split(replace(take(coalesce(items('For_Each_Alarm')?['alarm_text'], ''), 1500), decodeUriComponent('%0A'), ' '), ' ')",
+                                                                            "from": "@split(replace(replace(replace(take(coalesce(items('For_Each_Alarm')?['alarm_text'], ''), 1500), decodeUriComponent('%0A'), ' '), '<', ' <'), '>', '> '), ' ')",
                                                                             "select": "@if(contains(item(), '://'), item(), replace(replace(replace(replace(replace(replace(replace(replace(replace(item(), '*', '\\*'), '_', '\\_'), '`', '\\`'), '~', '\\~'), '[', '\\['), ']', '\\]'), '<', '&lt;'), '>', '&gt;'), '|', '\\|'))"
                                                                         }
                                                                     },
