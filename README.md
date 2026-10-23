@@ -324,7 +324,8 @@ In `AlertBacked` mode the incidents carry only `SOCRadar`; an automation rule ca
 labels. The alarm id is on the incident's URL entity instead -- see [Incident mode](#incident-mode).
 
 Sync reads the alarm id from `SOCRadar-Alarm-<id>`, falls back to parsing it out of the
-incident title, and last to the incident's URL entity (`.../alarm/<id>`), so incidents created
+incident title, and last to the incident's SOCRadar URL entity (`.../alarm-management?...&value=<id>`, or the older
+`.../alarm/<id>`), so incidents created
 before these labels existed, and alert-backed incidents, still sync. The obvious field
 for this, `providerIncidentId`, cannot be used: Azure overwrites both it and `providerName` on
 any incident created through the API, silently and without an error.

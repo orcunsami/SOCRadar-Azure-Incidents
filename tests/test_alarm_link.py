@@ -27,10 +27,13 @@ KQL_LINK = ('strcat("https://platform.socradar.com/app/company/", CompanyId, '
             '"/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)')
 URL = "string(coalesce(item()?['properties']?['url'], ''))"
 FIRST = "string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url'])"
-SYNC_WHERE = f"@and(equals(item()?['kind'], 'Url'), or(contains({URL}, '/alarm/'), contains({URL}, 'field=alarmId')))"
+# Only SOCRadar URLs count: IoC enrichment also adds URLs from the alarm text as entities.
+SYNC_WHERE = (f"@and(equals(item()?['kind'], 'Url'), contains({URL}, 'platform.socradar.com/'), "
+              f"or(contains({URL}, '/alarm/'), contains({URL}, 'field=alarmId')))")
 SYNC_EXTRACT = (f"@if(greater(length(body('Filter_Alarm_Url_Entities')), 0), if(contains({FIRST}, 'field=alarmId'), "
-                f"first(split(last(split({FIRST}, 'value=')), '&')), "
+                f"first(split(first(split(first(split(last(split({FIRST}, 'value=')), '&')), '#')), '/')), "
                 f"first(split(first(split(last(split({FIRST}, '/alarm/')), '?')), '/'))), '')")
+README_SYNC = "(`.../alarm-management?...&value=<id>`, or the older\n`.../alarm/<id>`)"
 
 failures = []
 checks = 0
@@ -84,19 +87,25 @@ check(len(syncs) == 2 and syncs[0] == syncs[1], "root and playbook Sync URL look
 for rel in ["azuredeploy.json", "Playbooks/SOCRadar-Alarm-Import/azuredeploy.json", "socradar-kql-queries.kql",
             "Analytic Rules/SOCRadarCriticalAlarmDetection.yaml", "README.md"]:
     check("platform.socradar.com/company/" not in read(rel), f"{rel}: old 404 link shape is back")
+check(README_SYNC in read("README.md"), "README does not describe both URL shapes Sync reads")
 
 
 def parse(url):
-    # Python mirror of SYNC_EXTRACT, run on real link shapes.
+    # Python mirror of SYNC_WHERE + SYNC_EXTRACT, run on real link shapes. None = filtered out.
+    if "platform.socradar.com/" not in url or ("/alarm/" not in url and "field=alarmId" not in url):
+        return None
     if "field=alarmId" in url:
-        return url.split("value=")[-1].split("&")[0]
+        return url.split("value=")[-1].split("&")[0].split("#")[0].split("/")[0]
     return url.split("/alarm/")[-1].split("?")[0].split("/")[0]
 
 
 for url, want in [
     ("https://platform.socradar.com/app/company/1000/alarm-management?tab=approved&field=alarmId&operator=equals&value=2000001", "2000001"),
     ("https://platform.socradar.com/app/company/1000/alarm-management?tab=potential&field=alarmId&operator=equals&value=2000002", "2000002"),
+    ("https://platform.socradar.com/app/company/1000/alarm-management?tab=approved&field=alarmId&operator=equals&value=2000004/", "2000004"),
+    ("https://platform.socradar.com/app/company/1000/alarm-management?tab=approved&field=alarmId&operator=equals&value=2000005#x", "2000005"),
     ("https://platform.socradar.com/company/1000/alarm/2000003", "2000003"),
+    ("https://example.com/alarm/999", None),
 ]:
     check(parse(url) == want, f"parse({url}) != {want}")
 

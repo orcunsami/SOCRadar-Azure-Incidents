@@ -3530,7 +3530,7 @@
                                             "type": "Query",
                                             "inputs": {
                                                 "from": "@coalesce(body('Get_Incident_Entities')?['entities'], json('[]'))",
-                                                "where": "@and(equals(item()?['kind'], 'Url'), or(contains(string(coalesce(item()?['properties']?['url'], '')), '/alarm/'), contains(string(coalesce(item()?['properties']?['url'], '')), 'field=alarmId')))"
+                                                "where": "@and(equals(item()?['kind'], 'Url'), contains(string(coalesce(item()?['properties']?['url'], '')), 'platform.socradar.com/'), or(contains(string(coalesce(item()?['properties']?['url'], '')), '/alarm/'), contains(string(coalesce(item()?['properties']?['url'], '')), 'field=alarmId')))"
                                             },
                                             "runAfter": {
                                                 "Get_Incident_Entities": [
@@ -3540,7 +3540,7 @@
                                         },
                                         "Alarm_ID_From_Entities": {
                                             "type": "Compose",
-                                            "inputs": "@if(greater(length(body('Filter_Alarm_Url_Entities')), 0), if(contains(string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url']), 'field=alarmId'), first(split(last(split(string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url']), 'value=')), '&')), first(split(first(split(last(split(string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url']), '/alarm/')), '?')), '/'))), '')",
+                                            "inputs": "@if(greater(length(body('Filter_Alarm_Url_Entities')), 0), if(contains(string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url']), 'field=alarmId'), first(split(first(split(first(split(last(split(string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url']), 'value=')), '&')), '#')), '/')), first(split(first(split(last(split(string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url']), '/alarm/')), '?')), '/'))), '')",
                                             "runAfter": {
                                                 "Filter_Alarm_Url_Entities": [
                                                     "Succeeded"
