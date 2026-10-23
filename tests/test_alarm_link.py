@@ -94,9 +94,9 @@ def parse(url):
 
 
 for url, want in [
-    ("https://platform.socradar.com/app/company/132/alarm-management?tab=approved&field=alarmId&operator=equals&value=108722207", "108722207"),
-    ("https://platform.socradar.com/app/company/132/alarm-management?tab=potential&field=alarmId&operator=equals&value=105203437", "105203437"),
-    ("https://platform.socradar.com/company/132/alarm/104659018", "104659018"),
+    ("https://platform.socradar.com/app/company/1000/alarm-management?tab=approved&field=alarmId&operator=equals&value=2000001", "2000001"),
+    ("https://platform.socradar.com/app/company/1000/alarm-management?tab=potential&field=alarmId&operator=equals&value=2000002", "2000002"),
+    ("https://platform.socradar.com/company/1000/alarm/2000003", "2000003"),
 ]:
     check(parse(url) == want, f"parse({url}) != {want}")
 
