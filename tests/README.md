@@ -26,6 +26,8 @@ shape and never runs a workflow action.
 | `test_alert_backed_mode.py` | Alert-backed mode: rule limits, import cap, checkpoint and the Sync entity reader |
 | `test_sync_window.py` | Sync reaches back 24 hours, drops synced incidents before the loop, and a failed page fails the run |
 | `test_query_logic.py` | The volume-spike rule, the not-yet-closed query and the Alarm Overview query do what the README says |
+| `test_description_markdown.py` | The incident description is markdown-safe: content table, escaped alarm text, caps applied after escaping, whole description cut at 5000 |
+| `test_alarm_link.py` | The View in SOCRadar link opens the alarm (tab from approval) and Sync reads the alarm id from both the new and the old SOCRadar URL |
 
 Run them all locally:
 

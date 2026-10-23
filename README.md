@@ -398,6 +398,9 @@ What is different in `AlertBacked`:
   5-minute interval on purpose, because a late run must not skip rows and a skipped row is never
   retried. The second alert joins the same incident, so an incident normally shows 2 alerts. An
   incident closed inside those 10 minutes comes back once as a new incident; close it again.
+- Upgrading an `AlertBacked` install from a version with the older `.../alarm/<id>` link: the
+  alert groups by that URL, so an alarm whose row lands in the 10 minutes around the redeploy can
+  get a second incident once. Close it; Sync handles both.
 - Verified against a workspace that is not connected to Microsoft Defender XDR. On a connected
   workspace Defender names the incident: Sync still finds the alarm through the URL entity, but
   the severity line may be absent, in which case that incident's severity is not written back.
