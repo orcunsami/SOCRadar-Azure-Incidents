@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin the "View in SOCRadar" link and Sync's parse of it.
+"""Pin the "View in SOCRadar" link and how Sync finds the alarm id.
 
 The platform opens an alarm at
   /app/company/<company>/alarm-management?tab=<tab>&field=alarmId&operator=equals&value=<alarm id>
@@ -8,9 +8,11 @@ tab=approved, alarms still in review under tab=potential; the wrong tab shows an
 The import picks the tab from is_approved. The alert-backed rule has no approval column
 and always uses tab=approved.
 
-Sync falls back to the alarm URL entity when an incident has neither the alarm label nor
-'#<id>' in its title. Incidents created before this change carry the old shape, so Sync
-must read both.
+Sync reads the alarm id from the SOCRadar-Alarm-<id> label, then from '#<id>' in the title,
+then from the SOCRadar URL entity. Alert-backed incidents have no label, so the title is
+their normal source. Incidents created before the link change carry the old URL shape, so
+Sync reads both. Only URLs on https://platform.socradar.com/ count: IoC enrichment also
+attaches URLs from the alarm text, and a foreign '.../alarm/<n>' must not close another alarm.
 
 Run:  python3 tests/test_alarm_link.py
 """
@@ -20,6 +22,7 @@ import os
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 A = "items('For_Each_Alarm')"
+I = "items('For_Each_Incident')"
 DESC_LINK = ("'View in SOCRadar: https://platform.socradar.com/app/company/', parameters('CompanyId'), "
              f"'/alarm-management?tab=', if(equals({A}?['is_approved'], false), 'potential', 'approved'), "
              f"'&field=alarmId&operator=equals&value=', {A}?['alarm_id']")
@@ -27,12 +30,15 @@ KQL_LINK = ('strcat("https://platform.socradar.com/app/company/", CompanyId, '
             '"/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)')
 URL = "string(coalesce(item()?['properties']?['url'], ''))"
 FIRST = "string(first(body('Filter_Alarm_Url_Entities'))?['properties']?['url'])"
-# Only SOCRadar URLs count: IoC enrichment also adds URLs from the alarm text as entities.
-SYNC_WHERE = (f"@and(equals(item()?['kind'], 'Url'), contains({URL}, 'platform.socradar.com/'), "
+SYNC_WHERE = (f"@and(equals(item()?['kind'], 'Url'), startsWith({URL}, 'https://platform.socradar.com/'), "
               f"or(contains({URL}, '/alarm/'), contains({URL}, 'field=alarmId')))")
 SYNC_EXTRACT = (f"@if(greater(length(body('Filter_Alarm_Url_Entities')), 0), if(contains({FIRST}, 'field=alarmId'), "
                 f"first(split(first(split(first(split(last(split({FIRST}, 'value=')), '&')), '#')), '/')), "
-                f"first(split(first(split(last(split({FIRST}, '/alarm/')), '?')), '/'))), '')")
+                f"first(split(first(split(first(split(last(split({FIRST}, '/alarm/')), '?')), '#')), '/'))), '')")
+EXTRACT_ID = (f"@if(contains(string(coalesce({I}?['properties']?['labels'], json('[]'))), 'SOCRadar-Alarm-'), "
+              f"split(split(string({I}?['properties']?['labels']), 'SOCRadar-Alarm-')[1], '\"')[0], "
+              f"if(contains(coalesce({I}?['properties']?['title'], ''), '#'), "
+              f"split(split({I}?['properties']?['title'], '#')[1], ' ')[0], ''))")
 README_SYNC = "(`.../alarm-management?...&value=<id>`, or the older\n`.../alarm/<id>`)"
 
 failures = []
@@ -76,10 +82,11 @@ for rel in ["socradar-kql-queries.kql", "Analytic Rules/SOCRadarCriticalAlarmDet
 syncs = []
 for rel in ["azuredeploy.json", "Playbooks/SOCRadar-Alarm-Sync/azuredeploy.json"]:
     t = json.loads(read(rel))
+    check(find(t, "Extract_Alarm_ID")["inputs"] == EXTRACT_ID, f"{rel}: alarm id from label/title changed")
     lookup = find(t, "Check_Needs_Entity_Lookup")["actions"]
     syncs.append(json.dumps(lookup, sort_keys=True))
     check(lookup["Filter_Alarm_Url_Entities"]["inputs"]["where"] == SYNC_WHERE,
-          f"{rel}: Sync does not accept both the old and the new alarm URL")
+          f"{rel}: Sync does not accept exactly the SOCRadar alarm URLs, old and new")
     check(lookup["Alarm_ID_From_Entities"]["inputs"] == SYNC_EXTRACT,
           f"{rel}: Sync does not read the alarm id from both URL shapes")
 check(len(syncs) == 2 and syncs[0] == syncs[1], "root and playbook Sync URL lookup differ")
@@ -91,12 +98,17 @@ check(README_SYNC in read("README.md"), "README does not describe both URL shape
 
 
 def parse(url):
-    # Python mirror of SYNC_WHERE + SYNC_EXTRACT, run on real link shapes. None = filtered out.
-    if "platform.socradar.com/" not in url or ("/alarm/" not in url and "field=alarmId" not in url):
+    # Python mirror of SYNC_WHERE + SYNC_EXTRACT. None = filtered out.
+    if not url.startswith("https://platform.socradar.com/") or ("/alarm/" not in url and "field=alarmId" not in url):
         return None
     if "field=alarmId" in url:
         return url.split("value=")[-1].split("&")[0].split("#")[0].split("/")[0]
-    return url.split("/alarm/")[-1].split("?")[0].split("/")[0]
+    return url.split("/alarm/")[-1].split("?")[0].split("#")[0].split("/")[0]
+
+
+def title_id(title):
+    # Python mirror of the title branch of EXTRACT_ID.
+    return title.split("#")[1].split(" ")[0] if "#" in title else ""
 
 
 for url, want in [
@@ -105,9 +117,14 @@ for url, want in [
     ("https://platform.socradar.com/app/company/1000/alarm-management?tab=approved&field=alarmId&operator=equals&value=2000004/", "2000004"),
     ("https://platform.socradar.com/app/company/1000/alarm-management?tab=approved&field=alarmId&operator=equals&value=2000005#x", "2000005"),
     ("https://platform.socradar.com/company/1000/alarm/2000003", "2000003"),
+    ("https://platform.socradar.com/company/1000/alarm/2000006#top", "2000006"),
     ("https://example.com/alarm/999", None),
+    ("https://evil.example/platform.socradar.com/x/alarm/77", None),
 ]:
     check(parse(url) == want, f"parse({url}) != {want}")
+
+for title, want in [("[SOCRadar] #2000007 - Some alarm", "2000007"), ("[SOCRadar] Some alarm", "")]:
+    check(title_id(title) == want, f"title_id({title}) != {want}")
 
 if failures:
     for f in failures:
