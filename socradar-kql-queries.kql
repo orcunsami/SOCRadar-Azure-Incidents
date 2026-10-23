@@ -225,7 +225,7 @@ SOCRadar_Alarms_CL
     Type = strcat(AlarmMainType, " / ", AlarmSubType),
     Title,
     Status,
-    SOCRadarLink = strcat("https://platform.socradar.com/company/", CompanyId, "/alarm/", AlarmId)
+    SOCRadarLink = strcat("https://platform.socradar.com/app/company/", CompanyId, "/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)
 | order by TimeGenerated desc
 | take 100
 

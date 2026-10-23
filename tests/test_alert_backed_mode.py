@@ -232,8 +232,9 @@ if root_nested:
         url = [m for m in mappings if m.get("entityType") == "URL"]
         check(len(url) == 1 and url[0]["fieldMappings"] == [{"identifier": "Url", "columnName": "AlarmUrl"}],
               "the alarm URL must be mapped as the URL entity: it is the identity that survives the 50-value cliff")
-        check('strcat("https://platform.socradar.com/company/", CompanyId, "/alarm/", AlarmId)' in query,
-              "AlarmUrl must be built as .../company/<id>/alarm/<alarm id>, the shape Sync parses")
+        check('strcat("https://platform.socradar.com/app/company/", CompanyId, '
+              '"/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)' in query,
+              "AlarmUrl must open the alarm in the platform (field=alarmId ... value=<id>), the shape Sync parses")
 
         grouping = props.get("incidentConfiguration", {}).get("groupingConfiguration", {})
         check(props.get("incidentConfiguration", {}).get("createIncident") is True, "rule must create incidents")

@@ -83,8 +83,9 @@ for path in TEMPLATES:
     check(words.get("from") == f"@split(replace(replace(replace(take(coalesce({A}?['alarm_text'], ''), 1500), "
                                f"decodeUriComponent('%0A'), ' '), '<', ' <'), '>', '> '), ' ')",
           f"{name}: alarm text is not split into words with tags separated")
-    check(desc.endswith("'View in SOCRadar: https://platform.socradar.com/company/', parameters('CompanyId'), "
-                        f"'/alarm/', {A}?['alarm_id']), 5000)}}"),
+    check(desc.endswith("'View in SOCRadar: https://platform.socradar.com/app/company/', parameters('CompanyId'), "
+                        f"'/alarm-management?tab=', if(equals({A}?['is_approved'], false), 'potential', 'approved'), "
+                        f"'&field=alarmId&operator=equals&value=', {A}?['alarm_id']), 5000)}}"),
           f"{name}: SOCRadar link missing or changed")
     check(sel.startswith("@if(contains(item(), '://'), item(), "), f"{name}: URL words are escaped")
     for a, b in FULL:

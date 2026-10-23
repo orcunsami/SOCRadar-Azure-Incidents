@@ -19,7 +19,7 @@ query: |
     SOCRadar_Alarms_CL
     | where Severity in ("HIGH", "CRITICAL")
     | where Status == "OPEN"
-    | extend AlarmUrl = strcat("https://platform.socradar.com/company/", CompanyId, "/alarm/", AlarmId)
+    | extend AlarmUrl = strcat("https://platform.socradar.com/app/company/", CompanyId, "/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)
     | extend AccountName = tostring(AlarmId)
     | project TimeGenerated, AlarmId, Title, AlarmMainType, AlarmSubType, Severity, Status, AlarmUrl, AccountName
 entityMappings:
