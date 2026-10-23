@@ -1270,6 +1270,83 @@
                                                                     ]
                                                                 },
                                                                 "actions": {
+                                                                    "Select_Detail_Words": {
+                                                                        "type": "Select",
+                                                                        "runAfter": {},
+                                                                        "inputs": {
+                                                                            "from": "@split(replace(take(coalesce(items('For_Each_Alarm')?['alarm_text'], ''), 1500), decodeUriComponent('%0A'), ' '), ' ')",
+                                                                            "select": "@if(contains(item(), '://'), item(), replace(replace(replace(replace(replace(replace(replace(replace(replace(item(), '*', '\\*'), '_', '\\_'), '`', '\\`'), '~', '\\~'), '[', '\\['), ']', '\\]'), '<', '&lt;'), '>', '&gt;'), '|', '\\|'))"
+                                                                        }
+                                                                    },
+                                                                    "Format_Content": {
+                                                                        "type": "Scope",
+                                                                        "runAfter": {
+                                                                            "Select_Detail_Words": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "actions": {
+                                                                            "Content_Nodes": {
+                                                                                "type": "Compose",
+                                                                                "runAfter": {},
+                                                                                "inputs": "@xpath(xml(json(concat('{\"r\":', if(empty(items('For_Each_Alarm')?['content']), '{}', string(items('For_Each_Alarm')?['content'])), '}'))), '/r/*')"
+                                                                            },
+                                                                            "Select_Content_Keys": {
+                                                                                "type": "Select",
+                                                                                "runAfter": {
+                                                                                    "Content_Nodes": [
+                                                                                        "Succeeded"
+                                                                                    ]
+                                                                                },
+                                                                                "inputs": {
+                                                                                    "from": "@outputs('Content_Nodes')",
+                                                                                    "select": "@xpath(xml(item()), 'name(/*)')"
+                                                                                }
+                                                                            },
+                                                                            "Select_Content_Rows": {
+                                                                                "type": "Select",
+                                                                                "runAfter": {
+                                                                                    "Select_Content_Keys": [
+                                                                                        "Succeeded"
+                                                                                    ]
+                                                                                },
+                                                                                "inputs": {
+                                                                                    "from": "@union(body('Select_Content_Keys'), body('Select_Content_Keys'))",
+                                                                                    "select": "@concat('| ', replace(item(), '_', ' '), ' | ', if(empty(string(coalesce(items('For_Each_Alarm')?['content']?[item()], ''))), '-', if(greater(length(if(startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '[\"'), replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), '[\"', ''), '\"]', ''), '\",\"', ', '), '\"', ''), if(or(startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '{\"'), startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '[{')), replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), '[{', ''), '}]', ''), '},{', '<br><br>'), '\",\"', '<br>'), '\":\"', ': '), '\":', ': '), '\",', '<br>'), ',\"', '<br>'), '\"', ''), '{', ''), '}', ''), replace(if(contains(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '://'), replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '*', '\\*'), '_', '\\_'), '`', '\\`'), '~', '\\~'), '[', '\\['), ']', '\\]'), '<', '&lt;'), '>', '&gt;'), '|', '\\|')), decodeUriComponent('%0A'), '<br>')))), 300), concat(substring(if(startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '[\"'), replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), '[\"', ''), '\"]', ''), '\",\"', ', '), '\"', ''), if(or(startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '{\"'), startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '[{')), replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), '[{', ''), '}]', ''), '},{', '<br><br>'), '\",\"', '<br>'), '\":\"', ': '), '\":', ': '), '\",', '<br>'), ',\"', '<br>'), '\"', ''), '{', ''), '}', ''), replace(if(contains(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '://'), replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '*', '\\*'), '_', '\\_'), '`', '\\`'), '~', '\\~'), '[', '\\['), ']', '\\]'), '<', '&lt;'), '>', '&gt;'), '|', '\\|')), decodeUriComponent('%0A'), '<br>'))), 0, 300), '...'), if(startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '[\"'), replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), '[\"', ''), '\"]', ''), '\",\"', ', '), '\"', ''), if(or(startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '{\"'), startsWith(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '[{')), replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), '[{', ''), '}]', ''), '},{', '<br><br>'), '\",\"', '<br>'), '\":\"', ': '), '\":', ': '), '\",', '<br>'), ',\"', '<br>'), '\"', ''), '{', ''), '}', ''), replace(if(contains(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), '://'), replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '<', '&lt;'), '>', '&gt;'), '|', '\\|'), replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(string(coalesce(items('For_Each_Alarm')?['content']?[item()], '')), decodeUriComponent('%0D'), ''), '*', '\\*'), '_', '\\_'), '`', '\\`'), '~', '\\~'), '[', '\\['), ']', '\\]'), '<', '&lt;'), '>', '&gt;'), '|', '\\|')), decodeUriComponent('%0A'), '<br>'))))), ' |')"
+                                                                                }
+                                                                            },
+                                                                            "Content_Table": {
+                                                                                "type": "Compose",
+                                                                                "runAfter": {
+                                                                                    "Select_Content_Rows": [
+                                                                                        "Succeeded"
+                                                                                    ]
+                                                                                },
+                                                                                "inputs": "@if(empty(body('Select_Content_Rows')), '', take(concat('Content:', decodeUriComponent('%0A'), decodeUriComponent('%0A'), '| Field | Value |', decodeUriComponent('%0A'), '|---|---|', decodeUriComponent('%0A'), join(body('Select_Content_Rows'), decodeUriComponent('%0A'))), 2800))"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "Content_Markdown": {
+                                                                        "type": "Compose",
+                                                                        "runAfter": {
+                                                                            "Format_Content": [
+                                                                                "Succeeded",
+                                                                                "Failed",
+                                                                                "TimedOut",
+                                                                                "Skipped"
+                                                                            ]
+                                                                        },
+                                                                        "inputs": "@if(equals(actions('Format_Content')?['status'], 'Succeeded'), outputs('Content_Table'), if(empty(items('For_Each_Alarm')?['content']), '', concat('Content:', decodeUriComponent('%0A'), decodeUriComponent('%0A'), '```', decodeUriComponent('%0A'), take(string(items('For_Each_Alarm')?['content']), 2000), decodeUriComponent('%0A'), '```')))"
+                                                                    },
+                                                                    "Details_Markdown": {
+                                                                        "type": "Compose",
+                                                                        "runAfter": {
+                                                                            "Content_Markdown": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "inputs": "@concat(join(body('Select_Detail_Words'), ' '), if(greater(length(coalesce(items('For_Each_Alarm')?['alarm_text'], '')), 1500), '...', ''))"
+                                                                    },
                                                                     "Create_New_Incident": {
                                                                         "type": "ApiConnection",
                                                                         "inputs": {
@@ -1282,7 +1359,7 @@
                                                                             "path": "[concat('/Incidents/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('WorkspaceResourceGroup'), '/workspaces/', parameters('WorkspaceName'))]",
                                                                             "body": {
                                                                                 "title": "[SOCRadar] #@{items('For_Each_Alarm')?['alarm_id']} - @{if(greater(length(coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_generic_title'], '')), 200), concat(substring(items('For_Each_Alarm')?['alarm_type_details']?['alarm_generic_title'], 0, 197), '...'), coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_generic_title'], 'N/A'))}",
-                                                                                "description": "@{concat('SOCRadar Alarm', decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Alarm ID: ', string(items('For_Each_Alarm')?['alarm_id']), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Main Type: ', coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], 'N/A'), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Sub Type: ', coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], 'N/A'), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Severity: ', items('For_Each_Alarm')?['alarm_risk_level'], decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Status: ', coalesce(items('For_Each_Alarm')?['status'], 'OPEN'), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Created: ', items('For_Each_Alarm')?['date'], decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Details:', decodeUriComponent('%0A'), if(greater(length(coalesce(items('For_Each_Alarm')?['alarm_text'], '')), 1500), concat(substring(items('For_Each_Alarm')?['alarm_text'], 0, 1500), '...'), coalesce(items('For_Each_Alarm')?['alarm_text'], 'No details')), decodeUriComponent('%0A'), decodeUriComponent('%0A'), if(not(empty(items('For_Each_Alarm')?['content'])), concat('Content:', decodeUriComponent('%0A'), replace(replace(replace(replace(if(greater(length(string(items('For_Each_Alarm')?['content'])), 2000), concat(substring(string(items('For_Each_Alarm')?['content']), 0, 2000), '... [truncated]'), string(items('For_Each_Alarm')?['content'])), '\"', ''), '{', ''), '}', ''), ',', ' -*- '), decodeUriComponent('%0A'), decodeUriComponent('%0A')), ''), 'View in SOCRadar: https://platform.socradar.com/company/', parameters('CompanyId'), '/alarm/', items('For_Each_Alarm')?['alarm_id'])}",
+                                                                                "description": "@{concat('SOCRadar Alarm', decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Alarm ID: ', string(items('For_Each_Alarm')?['alarm_id']), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Main Type: ', coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_main_type'], 'N/A'), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Sub Type: ', coalesce(items('For_Each_Alarm')?['alarm_type_details']?['alarm_sub_type'], 'N/A'), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Severity: ', items('For_Each_Alarm')?['alarm_risk_level'], decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Status: ', coalesce(items('For_Each_Alarm')?['status'], 'OPEN'), decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Created: ', items('For_Each_Alarm')?['date'], decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Details:', decodeUriComponent('%0A'), if(empty(outputs('Details_Markdown')), 'No details', outputs('Details_Markdown')), decodeUriComponent('%0A'), decodeUriComponent('%0A'), if(empty(outputs('Content_Markdown')), '', concat(outputs('Content_Markdown'), decodeUriComponent('%0A'), decodeUriComponent('%0A'))), 'View in SOCRadar: https://platform.socradar.com/company/', parameters('CompanyId'), '/alarm/', items('For_Each_Alarm')?['alarm_id'])}",
                                                                                 "severity": "@{outputs('Map_Severity')}",
                                                                                 "status": "New",
                                                                                 "providerName": "SOCRadar",
@@ -1292,7 +1369,11 @@
                                                                                 }
                                                                             }
                                                                         },
-                                                                        "runAfter": {}
+                                                                        "runAfter": {
+                                                                            "Details_Markdown": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        }
                                                                     }
                                                                 },
                                                                 "else": {

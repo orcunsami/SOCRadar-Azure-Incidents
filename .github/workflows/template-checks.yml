@@ -90,6 +90,9 @@ jobs:
       - name: Shipped queries do what the README says
         run: python3 tests/test_query_logic.py
 
+      - name: Incident description is markdown-safe
+        run: python3 tests/test_description_markdown.py
+
       - name: No secrets in tracked files
         run: |
           set -e
