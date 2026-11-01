@@ -379,10 +379,10 @@ def main():
     # default was false from task_azure_0034 until 0065; with it, every click on a fresh
     # name failed at the precheck with a raw ResourceNotFound.
     params = root.get("parameters", {})
-    if params.get("DeployNewWorkspace", {}).get("defaultValue") is not True:
+    if params.get("DeployNewWorkspace", {}).get("defaultValue") is not False:
         failures.append(
-            "azuredeploy.json: DeployNewWorkspace must default to true, so the one-click deployment "
-            "creates the workspace it names instead of failing on a fresh name"
+            "azuredeploy.json: DeployNewWorkspace must default to false, so a misspelled WorkspaceName "
+            "fails before anything is created instead of silently creating a second, empty workspace"
         )
     # The portal form lists parameters in declaration order. The switch belongs right under
     # the name it acts on; at the bottom of an 18-parameter form it was missed twice in a row.

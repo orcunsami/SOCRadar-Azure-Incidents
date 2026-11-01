@@ -6,20 +6,21 @@
 # It shipped that way because every greenfield E2E ran with
 # DeployNewWorkspace=true -- a fresh workspace is what a greenfield test needs --
 # while the default was false, so the path a customer actually clicked was never
-# run. Since task_azure_0065 the default is true (one click on a fresh name creates
-# the workspace); false is the explicit "it must already exist" mode and is what
-# path A exercises. The guard's success branch is run too, because the guard is
+# run. The default is false again (task_azure_0096): a misspelled name fails before
+# anything is created instead of creating a second, empty workspace, and path A runs
+# at exactly that default. true is the explicit opt-in create that B, D2 and G use.
+# The guard's success branch is run too, because the guard is
 # SKIPPED on the happy path: a wrong api-version or field name inside it would
 # leave every test green and fail only at a customer.
 #
 # Seven paths, each asserting a different thing:
-#   A  missing workspace, DeployNewWorkspace=false -> deployment fails, resource group stays EMPTY
-#   B  same RG, defaults (the one-click path) -> succeeds, workspace created, guard skipped
+#   A  missing workspace, the defaults (DeployNewWorkspace=false) -> deployment fails, resource group stays EMPTY
+#   B  same RG, DeployNewWorkspace=true (the opt-in create) -> succeeds, workspace created, guard skipped
 #   C  existing workspace, cross-RG     -> guard SUCCEEDS and resolves customerId
 #   D  A's resource group after B       -> the guard does not block a redeploy
 #   E  cross-RG onto a workspace with no Microsoft Sentinel -> rejected, nothing created
 #   F  AlertBacked cross-RG                 -> rejected during validation
-#   G  existing workspace in another region, defaults -> InvalidResourceLocation, nothing created, workspace untouched
+#   G  existing workspace in another region, DeployNewWorkspace=true -> InvalidResourceLocation, nothing created, workspace untouched
 #
 # Run before pushing any change to the resource graph of azuredeploy.json.
 set -uo pipefail
@@ -86,8 +87,8 @@ az group create -n "$RG_APP" -l "$LOCATION" -o none
 az group create -n "$RG_WS"  -l "$LOCATION" -o none
 
 # --- A: the typo, with the operator saying the workspace already exists ----------------
-echo "[2/5] Path A: missing workspace with DeployNewWorkspace=false ..."
-deploy "$RG_APP" path-a WorkspaceName="$MISSING" WorkspaceResourceGroup="$RG_APP" DeployNewWorkspace=false
+echo "[2/5] Path A: missing workspace, parameters at their defaults (DeployNewWorkspace=false) ..."
+deploy "$RG_APP" path-a WorkspaceName="$MISSING" WorkspaceResourceGroup="$RG_APP"
 state=$(az deployment group show -g "$RG_APP" -n path-a --query properties.provisioningState -o tsv 2>/dev/null)
 left=$(az resource list -g "$RG_APP" --query "length(@)" -o tsv 2>/dev/null)
 failed_steps=$(az deployment operation group list -g "$RG_APP" -n path-a \
@@ -105,9 +106,9 @@ failed_steps=$(az deployment operation group list -g "$RG_APP" -n path-a \
     && row "A blames the precheck" PASS "precheck-workspace-exists" \
     || row "A blames the precheck" FAIL "the precheck was not the failing step"
 
-# --- B: greenfield with the defaults, what the Deploy button does ----------------------
-echo "[3/5] Path B: fresh workspace name, parameters at their defaults ..."
-deploy "$RG_APP" path-b WorkspaceName="$WS" WorkspaceResourceGroup="$RG_APP"
+# --- B: greenfield, the opt-in create --------------------------------------------------
+echo "[3/5] Path B: fresh workspace name with DeployNewWorkspace=true ..."
+deploy "$RG_APP" path-b WorkspaceName="$WS" WorkspaceResourceGroup="$RG_APP" DeployNewWorkspace=true
 state=$(az deployment group show -g "$RG_APP" -n path-b --query properties.provisioningState -o tsv 2>/dev/null)
 [ "$state" = Succeeded ] \
     && row "B greenfield succeeds" PASS "$state" \
@@ -142,18 +143,18 @@ state=$(az deployment group show -g "$RG_APP" -n path-d --query properties.provi
 [ "$state" = Succeeded ] \
     && row "D redeploy succeeds" PASS "$state" \
     || row "D redeploy succeeds" FAIL "expected Succeeded, got '${state:-<unreadable>}' - the guard blocks a workspace that exists"
-# The same redeploy with the defaults (DeployNewWorkspace=true) PUTs the existing workspace.
+# The same redeploy with DeployNewWorkspace=true PUTs the existing workspace.
 # Nothing about it may change: full JSON compare, only etag and modifiedDate excluded.
 ws_show() { az monitor log-analytics workspace show -g "$RG_APP" -n "$WS" -o json 2>/dev/null \
     | python3 -c "import json,sys;d=json.load(sys.stdin);[d.pop(k,None) for k in ('etag','modifiedDate')];print(json.dumps(d,sort_keys=True))"; }
 az monitor log-analytics workspace update -g "$RG_APP" -n "$WS" --retention-time 60 --tags probe=d2 -o none 2>/dev/null
 before=$(ws_show)
-deploy "$RG_APP" path-d2 WorkspaceName="$WS" WorkspaceResourceGroup="$RG_APP"
+deploy "$RG_APP" path-d2 WorkspaceName="$WS" WorkspaceResourceGroup="$RG_APP" DeployNewWorkspace=true
 state=$(az deployment group show -g "$RG_APP" -n path-d2 --query properties.provisioningState -o tsv 2>/dev/null)
 after=$(ws_show)
 [ "$state" = Succeeded ] \
-    && row "D2 redeploy with defaults succeeds" PASS "$state" \
-    || row "D2 redeploy with defaults succeeds" FAIL "expected Succeeded, got '${state:-<unreadable>}'"
+    && row "D2 redeploy with DeployNewWorkspace=true succeeds" PASS "$state" \
+    || row "D2 redeploy with DeployNewWorkspace=true succeeds" FAIL "expected Succeeded, got '${state:-<unreadable>}'"
 [ -n "$before" ] && [ "$before" = "$after" ] \
     && row "D2 existing workspace untouched" PASS "$(printf '%s' "$after" | wc -c | tr -d ' ') bytes identical" \
     || row "D2 existing workspace untouched" FAIL "workspace JSON changed"
@@ -190,11 +191,11 @@ left=$(az resource list -g "$RG_E" --query "length(@)" -o tsv 2>/dev/null)
     && row "F leaves nothing behind" PASS "0 resources" \
     || row "F leaves nothing behind" FAIL "expected 0, found '${left:-<unreadable>}'"
 
-# --- G: the default now writes to an existing workspace; a region mismatch must stop it -
+# --- G: DeployNewWorkspace=true writes to an existing workspace; a region mismatch must stop it -
 # WorkspaceLocation defaults to the resource group's region. An existing workspace in
 # another region cannot be moved, so the PUT is rejected and, because every other resource
 # waits on the workspace, nothing else is created. The workspace itself must be untouched.
-echo "[8/8] Path G: existing workspace in another region, parameters at their defaults ..."
+echo "[8/8] Path G: existing workspace in another region with DeployNewWorkspace=true ..."
 OTHER_LOCATION="${TEST_OTHER_LOCATION:-northeurope}"
 WS_G="ws-region-$SFX"
 az monitor log-analytics workspace create -g "$RG_E" -n "$WS_G" -l "$OTHER_LOCATION" --retention-time 30 -o none 2>/dev/null
@@ -203,7 +204,7 @@ before=$(az monitor log-analytics workspace show -g "$RG_E" -n "$WS_G" --query "
 # `az deployment group list` stays empty), so the error is only in the CLI output.
 out=$(az deployment group create -g "$RG_E" -n path-g --template-file "$TEMPLATE" \
     --parameters CompanyId="$COMPANY_ID" @"$PARAMS_FILE" _triggerStartTime="$(start_time)" \
-                 WorkspaceName="$WS_G" WorkspaceResourceGroup="$RG_E" -o none 2>&1)
+                 WorkspaceName="$WS_G" WorkspaceResourceGroup="$RG_E" DeployNewWorkspace=true -o none 2>&1)
 records=$(az deployment group list -g "$RG_E" --query "[?name=='path-g'] | length(@)" -o tsv 2>/dev/null)
 left=$(az resource list -g "$RG_E" --query "length(@)" -o tsv 2>/dev/null)
 after=$(az monitor log-analytics workspace show -g "$RG_E" -n "$WS_G" --query "[location,retentionInDays,sku.name]" -o tsv 2>/dev/null | tr '\n' ' ')

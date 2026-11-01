@@ -72,8 +72,8 @@ Notes:
 
 ## Prerequisites
 
-- Microsoft Sentinel workspace -- `WorkspaceName` is either an existing workspace or a new
-  name; a new name is created as part of this deployment (`DeployNewWorkspace`, default `true`)
+- Microsoft Sentinel workspace -- `WorkspaceName` must be an existing workspace, unless you set
+  `DeployNewWorkspace` to `true`, which creates it as part of this deployment
 - SOCRadar API key and Company ID
 
 ## Parameters
@@ -99,9 +99,11 @@ the deployment fail. If you are looking at a resource group in that state from a
 attempt, redeploying over it with the correct name reconciles it; the Logic App in it is
 billable until then, so disable it or delete the resource group.
 
-With `DeployNewWorkspace` at its default `true` a typo does not fail: it creates a second,
-empty workspace under the misspelled name. The pre-check is skipped in that mode, because the
-workspace may not exist yet. Set it `false` when the workspace must already exist.
+`DeployNewWorkspace` defaults to `false`, so a typo fails instead of creating a second, empty
+workspace under the misspelled name. Set it `true` to create the workspace in this deployment;
+the pre-check is skipped in that mode, because the workspace may not exist yet.
+
+**Note:** with the default, the workspace in `WorkspaceName` must already exist in the resource group, unless you set `DeployNewWorkspace` to `true`.
 
 ### Redeploy to fix a failed deployment -- do not delete the Logic Apps first
 
@@ -173,7 +175,7 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 |-----------|---------|-------------|
 | `WorkspaceLocation` | RG region | Workspace region (e.g., `northeurope`). Defaults to the resource group's region, which is wrong whenever the workspace lives elsewhere -- see [Cross-Region / Cross-RG](#cross-region--cross-rg) |
 | `WorkspaceResourceGroup` | deployment RG | Set if workspace is in a different RG. Changes what gets deployed -- see [Cross-Region / Cross-RG](#cross-region--cross-rg) |
-| `DeployNewWorkspace` | `true` | Create `WorkspaceName` when it does not exist yet. An existing workspace of that name is left as it is: the workspace resource states no settings, and a live check found tags, pricing tier, retention, daily cap and feature flags unchanged after redeploying. `false` requires the workspace to exist and fails on a misspelled name before anything is created. Ignored when `WorkspaceResourceGroup` is not the deployment RG. An existing workspace in a region other than `WorkspaceLocation` fails with `InvalidResourceLocation` and nothing is created -- set `WorkspaceLocation` to its region. |
+| `DeployNewWorkspace` | `false` | `false` requires the workspace to exist and fails on a misspelled name before anything is created. `true` creates `WorkspaceName` when it does not exist yet; an existing workspace of that name is left as it is: the workspace resource states no settings, and a live check found tags, pricing tier, retention, daily cap and feature flags unchanged after redeploying. Ignored when `WorkspaceResourceGroup` is not the deployment RG. With `true`, an existing workspace in a region other than `WorkspaceLocation` fails with `InvalidResourceLocation` and nothing is created -- set `WorkspaceLocation` to its region. |
 | `SentinelRoleLevel` | `Responder` | `Responder` (least-privilege) or `Contributor`. Does not apply to the Import identity while `EnableIoCEnrichment` is `true`: it gets Contributor so it can add entities. Sync stays on this role |
 | `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window |
 | `InitialLookbackMinutes` | `600` | Lookback window when there is no checkpoint yet (10 hours) |
@@ -202,8 +204,8 @@ az monitor log-analytics workspace show -g <resource-group> -n <workspace> \
 If `lastSkuUpdate` lines up with when you first deployed this integration and the tier isn't
 the one you picked, reset your commitment tier from **Log Analytics workspaces > Usage and
 estimated costs > Pricing tier**. The current template states no workspace-level settings at
-all, so redeploying or upgrading an existing install -- with `DeployNewWorkspace` at its default
-`true` -- cannot change its pricing tier, retention or daily cap; a mutation test against a
+all, so redeploying or upgrading an existing install -- with `DeployNewWorkspace` `true` or
+`false` -- cannot change its pricing tier, retention or daily cap; a mutation test against a
 live workspace (non-default 90-day retention, `DeployNewWorkspace=true`) confirmed both the
 retention and `sku.lastSkuUpdate` came back untouched after redeploying.
 
@@ -294,7 +296,7 @@ is kept as it was.
 - **SOCRadar Dashboard** workbook (optional, needs the alarms table)
 - **Five hunting queries** under **Microsoft Sentinel > Hunting** (see [Hunting Queries](#hunting-queries))
 - Data Collection Endpoint and Rules for custom tables
-- **Workspace** -- when `DeployNewWorkspace=true` (default) and no workspace of that name exists in the deployment RG, with the subscription default tier; an existing one is left untouched
+- **Workspace** -- when `DeployNewWorkspace=true` (not the default) and no workspace of that name exists in the deployment RG, with the subscription default tier; an existing one is left untouched
 - **Microsoft Sentinel onboarding** -- applied whenever the workspace is in the deployment RG, new or existing
 - Role assignments giving each Logic App identity least privilege: Log Analytics Reader,
   Monitoring Metrics Publisher on each DCR, Storage Table Data Contributor on the checkpoint
