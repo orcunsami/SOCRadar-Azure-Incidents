@@ -103,8 +103,6 @@ billable until then, so disable it or delete the resource group.
 workspace under the misspelled name. Set it `true` to create the workspace in this deployment;
 the pre-check is skipped in that mode, because the workspace may not exist yet.
 
-**Note:** with the default, the workspace in `WorkspaceName` must already exist in the resource group, unless you set `DeployNewWorkspace` to `true`.
-
 ### Redeploy to fix a failed deployment -- do not delete the Logic Apps first
 
 Redeploying over the same resource group is safe and is the way to fix a failed or partial
