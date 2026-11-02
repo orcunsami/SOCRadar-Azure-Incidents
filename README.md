@@ -397,29 +397,40 @@ What is different in `AlertBacked`:
   line, then the link to the alarm. These incidents carry no `SOCRadar-Severity-*` label, so Sync
   reads the level from that line and severity write-back behaves as in Direct mode; editing the
   line away only switches the write-back off for that incident.
-- The import extracts the first IPv4, domain and URL indicator from the alarm (the same regex
-  technique Direct mode uses for its bookmark enrichment) and writes them to the row; the rule
-  maps each one as its own entity, so an `AlertBacked` incident's Entities tab is populated the
-  same run the incident is created. Together with `AlarmUrl` that is 4 entity mappings; a live
-  deploy measured the rule's real platform ceiling at 5 (not the 10 originally assumed), so this
-  is one indicator per type, not three. This extraction always runs in `AlertBacked` mode and
+- The import extracts the first IPv4, domain and URL indicator from the alarm text (the same
+  regex technique Direct mode uses for its bookmark enrichment) and writes them to the row. The
+  rule maps the IP and the URL from them (a SOCRadar platform link is dropped, it is not an
+  indicator). The domain is different: the first regex domain is alphabetical and on lookalike
+  alarms it is often a name server, so the DNS entity is the phishing domain instead
+  (`SuspiciousDomain`, read from the `Phishing Domain:` line of the alarm text, falling back to
+  the `phishing_domain` payload key; empty for alarm types that have none). The customer's own
+  brand (`alarm_asset`) is never an entity; it is the `MonitoredAsset` custom detail, next to
+  `SuspiciousDomain`, so an automation rule can branch on them. An `AlertBacked` incident's
+  Entities tab is populated the same run the incident is created. Together with `AlarmUrl` that
+  is 4 entity mappings; a live deploy measured the rule's real platform ceiling at 5 (not the 10
+  originally assumed), so this is one indicator per type, not three. This extraction always runs in `AlertBacked` mode and
   does not check `EnableIoCEnrichment` -- that parameter only gates Direct mode's bookmark-based
   enrichment (which needs the elevated Contributor role); the alert-backed path maps entities
   through the rule itself and needs no such elevation, only one extra Log Analytics query per
   alarm. Incident grouping keys off the `AlarmId` custom detail rather than an entity, so two
   different alarms that happen to share an IoC indicator do not merge into one incident.
-- One alert per alarm. The platform runs a rule's query about 6 minutes behind the clock, so the
-  rule runs every 10 minutes, only considers a row once it is 12 minutes old, and drops alarms
-  that already have an alert (it reads `SecurityAlert` for the `AlarmId` custom detail). A closed
-  incident is therefore not followed by a second one for the same alarm. The cost is delay: an
-  incident shows up about 12 to 25 minutes after the import, not 3 to 11. Rows are never dropped:
-  an alarm stays eligible for a day until it has an alert.
+- One alert per alarm, best effort. The platform runs a rule's query about 6 minutes behind the
+  clock, so the rule runs every 10 minutes, only considers a row once it is 12 minutes old, and
+  drops alarms that already have an alert (it reads `SecurityAlert` for the `AlarmId` custom
+  detail). In the live test a closed incident was not followed by a second one for the same
+  alarm. If the previous alert is ever not visible yet, the duplicate alert joins the same
+  incident (grouping is by `AlarmId`). The cost is delay: in the live test an incident showed up
+  about 20 minutes after the import (the 12 to 25 minute range is an estimate), not 3 to 11. An
+  alarm stays eligible for a day after it is written; if the rule does not run for longer than
+  that, the alarm never gets an alert.
 - Upgrading an `AlertBacked` install from an older version: the alert groups by the `AlarmId`
   custom detail, so an alarm whose row lands in the 10 minutes around the redeploy can get a
   second incident once. Close it; Sync handles both.
-- Verified against a workspace that is not connected to Microsoft Defender XDR. On a connected
-  workspace Defender names the incident: Sync still finds the alarm through the URL entity, but
-  the severity line may be absent, in which case that incident's severity is not written back.
+- Measured on a workspace connected to Microsoft Defender XDR: the incident kept the
+  `[SOCRadar] #<id>` title and the description, so Sync found the alarm and the severity line.
+  Defender can rename an incident when its correlation merges alerts; then Sync falls back to the
+  URL entity, and if the severity line is also absent that incident's severity is not written
+  back.
 - Closed alarms never become incidents here. With `ImportAllStatuses=true` they still land in
   the table, but the rule only fires on `OPEN`.
 - The IoC entity enrichment reaches these incidents on the next import run, through the same
