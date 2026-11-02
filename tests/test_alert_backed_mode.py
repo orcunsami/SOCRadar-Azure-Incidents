@@ -238,16 +238,16 @@ if root_nested:
 
         mappings = props.get("entityMappings", [])
         # AlarmUrl stays first: it is the one entity every alarm always has, used to be the
-        # grouping key before IoC entities existed. The 9 IoC entities (first 3 IPs/domains/
-        # URLs the Logic App regex-extracted from the alarm, same technique Direct mode uses
-        # for bookmark enrichment) ride alongside it, one column each -- Sentinel does not
-        # expand an array column into several entities from a single row.
+        # grouping key before IoC entities existed. One IoC entity per type (the first IP/
+        # domain/URL the Logic App regex-extracted from the alarm, same technique Direct mode
+        # uses for bookmark enrichment) rides alongside it. A live deploy measured the real
+        # platform cap at 5 (not the 10 originally assumed from general entityMappings docs --
+        # "Invalid length of '10' for 'EntityMappings'. ... should be between '1' and '5'"),
+        # so this stays at 4 of 5 on purpose, not 3-per-type.
         check(mappings and mappings[0] == {"entityType": "URL", "fieldMappings": [{"identifier": "Url", "columnName": "AlarmUrl"}]},
               "AlarmUrl must still be the first URL entity mapping")
-        check(len(mappings) == 10, f"entityMappings must total 10 (platform cap): found {len(mappings)}")
-        ioc_cols = {"IoCIp1": "Address", "IoCIp2": "Address", "IoCIp3": "Address",
-                    "IoCDomain1": "DomainName", "IoCDomain2": "DomainName", "IoCDomain3": "DomainName",
-                    "IoCUrl1": "Url", "IoCUrl2": "Url", "IoCUrl3": "Url"}
+        check(len(mappings) == 4, f"entityMappings must total 4 (real platform cap is 5, measured via live deploy): found {len(mappings)}")
+        ioc_cols = {"IoCIp1": "Address", "IoCDomain1": "DomainName", "IoCUrl1": "Url"}
         by_col = {m["fieldMappings"][0]["columnName"]: (m["entityType"], m["fieldMappings"][0]["identifier"])
                   for m in mappings[1:]}
         for col, identifier in ioc_cols.items():
@@ -365,24 +365,24 @@ for path, template in ((ROOT, root), (IMPORT, import_pb)):
         _, is_new = by_name(actions, "Check_Alarm_Is_New")
         check(is_new and "404" in json.dumps(is_new["expression"]), f"{label}: Check_Alarm_Is_New must test for 404")
 
-        IOC_COLUMNS = ["IoCIp1", "IoCIp2", "IoCIp3", "IoCDomain1", "IoCDomain2", "IoCDomain3",
-                       "IoCUrl1", "IoCUrl2", "IoCUrl3"]
+        IOC_COLUMNS = ["IoCIp1", "IoCDomain1", "IoCUrl1"]
         _, ingest = by_name(actions, "Ingest_Alarm_Row")
         _, direct_ingest = by_name(actions, "Ingest_To_Custom_Table")
         ingest_cols = list(ingest["inputs"]["body"][0].keys()) if ingest else []
         direct_cols = list(direct_ingest["inputs"]["body"][0].keys()) if direct_ingest else []
-        # AlertBacked writes every Direct-mode column plus the 9 IoC columns (its own entity
-        # mappings, since the alert-backed path cannot run Direct's bookmark-based enrichment).
+        # AlertBacked writes every Direct-mode column plus the first IP/domain/URL IoC (its own
+        # entity mappings, since the alert-backed path cannot run Direct's bookmark-based
+        # enrichment). One per type, not three: a live deploy measured the real entityMappings
+        # cap at 5, so only 4 of 5 are spent here (AlarmUrl + these 3).
         check(ingest and ingest["inputs"]["method"] == "POST" and direct_cols
               and all(c in ingest_cols for c in direct_cols)
               and [c for c in ingest_cols if c not in direct_cols] == IOC_COLUMNS,
-              f"{label}: Ingest_Alarm_Row must write every Direct-mode column plus exactly the 9 IoC columns")
-        for i, col in enumerate(("ips", "ips", "ips", "domains", "domains", "domains", "urls", "urls", "urls")):
-            idx = i % 3
+              f"{label}: Ingest_Alarm_Row must write every Direct-mode column plus exactly the 3 IoC columns")
+        for i, col in enumerate(("ips", "domains", "urls")):
             name = IOC_COLUMNS[i]
             check(ingest and ingest["inputs"]["body"][0].get(name)
-                  == f"@{{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['{col}']?[{idx}], '')}}",
-                  f"{label}: {name} must read Parse_AlertBacked_IoC_Arrays['{col}'][{idx}], defaulting to ''")
+                  == f"@{{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['{col}']?[0], '')}}",
+                  f"{label}: {name} must read Parse_AlertBacked_IoC_Arrays['{col}'][0], defaulting to ''")
         _, parse = by_name(actions, "Parse_AlertBacked_IoC_Arrays")
         check(parse and ingest and ingest["runAfter"] == {"Parse_AlertBacked_IoC_Arrays": ["Succeeded"]},
               f"{label}: Ingest_Alarm_Row must run after Parse_AlertBacked_IoC_Arrays")

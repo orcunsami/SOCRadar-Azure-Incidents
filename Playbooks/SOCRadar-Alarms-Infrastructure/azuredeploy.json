@@ -120,42 +120,12 @@
                             "description": "First-3 IPv4 indicator extracted from the alarm (empty if none)"
                         },
                         {
-                            "name": "IoCIp2",
-                            "type": "string",
-                            "description": "First-3 IPv4 indicator extracted from the alarm (empty if none)"
-                        },
-                        {
-                            "name": "IoCIp3",
-                            "type": "string",
-                            "description": "First-3 IPv4 indicator extracted from the alarm (empty if none)"
-                        },
-                        {
                             "name": "IoCDomain1",
                             "type": "string",
                             "description": "First-3 domain indicator extracted from the alarm (empty if none)"
                         },
                         {
-                            "name": "IoCDomain2",
-                            "type": "string",
-                            "description": "First-3 domain indicator extracted from the alarm (empty if none)"
-                        },
-                        {
-                            "name": "IoCDomain3",
-                            "type": "string",
-                            "description": "First-3 domain indicator extracted from the alarm (empty if none)"
-                        },
-                        {
                             "name": "IoCUrl1",
-                            "type": "string",
-                            "description": "First-3 URL indicator extracted from the alarm (empty if none)"
-                        },
-                        {
-                            "name": "IoCUrl2",
-                            "type": "string",
-                            "description": "First-3 URL indicator extracted from the alarm (empty if none)"
-                        },
-                        {
-                            "name": "IoCUrl3",
                             "type": "string",
                             "description": "First-3 URL indicator extracted from the alarm (empty if none)"
                         }
@@ -229,35 +199,11 @@
                                 "type": "string"
                             },
                             {
-                                "name": "IoCIp2",
-                                "type": "string"
-                            },
-                            {
-                                "name": "IoCIp3",
-                                "type": "string"
-                            },
-                            {
                                 "name": "IoCDomain1",
                                 "type": "string"
                             },
                             {
-                                "name": "IoCDomain2",
-                                "type": "string"
-                            },
-                            {
-                                "name": "IoCDomain3",
-                                "type": "string"
-                            },
-                            {
                                 "name": "IoCUrl1",
-                                "type": "string"
-                            },
-                            {
-                                "name": "IoCUrl2",
-                                "type": "string"
-                            },
-                            {
-                                "name": "IoCUrl3",
                                 "type": "string"
                             }
                         ]

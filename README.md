@@ -396,13 +396,17 @@ What is different in `AlertBacked`:
   `SOCRadar severity: <LEVEL>` line. These incidents carry no `SOCRadar-Severity-*` label, so Sync
   reads the level from that line and severity write-back behaves as in Direct mode; editing the
   line away only switches the write-back off for that incident.
-- The import extracts up to 3 IPv4, 3 domain and 3 URL indicators from the alarm (the same regex
+- The import extracts the first IPv4, domain and URL indicator from the alarm (the same regex
   technique Direct mode uses for its bookmark enrichment) and writes them to the row; the rule
   maps each one as its own entity, so an `AlertBacked` incident's Entities tab is populated the
-  same run the incident is created. Together with `AlarmUrl` that is 10 entity mappings, the
-  rule's platform ceiling -- no more entities can be added without dropping one of these. Incident
-  grouping keys off the `AlarmId` custom detail rather than an entity, so two different alarms
-  that happen to share an IoC indicator do not merge into one incident.
+  same run the incident is created. Together with `AlarmUrl` that is 4 entity mappings; a live
+  deploy measured the rule's real platform ceiling at 5 (not the 10 originally assumed), so this
+  is one indicator per type, not three. This extraction always runs in `AlertBacked` mode and
+  does not check `EnableIoCEnrichment` -- that parameter only gates Direct mode's bookmark-based
+  enrichment (which needs the elevated Contributor role); the alert-backed path maps entities
+  through the rule itself and needs no such elevation, only one extra Log Analytics query per
+  alarm. Incident grouping keys off the `AlarmId` custom detail rather than an entity, so two
+  different alarms that happen to share an IoC indicator do not merge into one incident.
 - Every alarm row is seen by two consecutive rule runs: the 10-minute window overlaps the
   5-minute interval on purpose, because a late run must not skip rows and a skipped row is never
   retried. The second alert joins the same incident, so an incident normally shows 2 alerts. An
