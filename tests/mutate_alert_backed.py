@@ -198,6 +198,18 @@ def m_description_link_glued(t):
     r["properties"]["query"] = r["properties"]["query"].replace('strcat("\\n\\nView in SOCRadar: "', 'strcat("View in SOCRadar: "')
 
 
+def m_no_alert_dedup(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("| join kind=leftanti Alerted on $left.AlarmId == $right.AlertedAlarmId\n", "")
+
+
+def m_dedup_flat_custom_details(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace(
+        "tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])",
+        "tostring(parse_json(tostring(ExtendedProperties)).AlarmId)")
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -225,6 +237,8 @@ MUTATIONS = [
     ("IoC enrichment hard-fails ingest", (ROOT, IMPORT), m_ioc_enrichment_hard_fail),
     ("description goes back to a pipe table", (ROOT, IMPORT), m_description_pipe_table),
     ("link glued to severity line", (ROOT, IMPORT), m_description_link_glued),
+    ("rule alerts an alarm twice", (ROOT, IMPORT), m_no_alert_dedup),
+    ("alerted-AlarmId read uses the flat shape", (ROOT, IMPORT), m_dedup_flat_custom_details),
     ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
 ]
 

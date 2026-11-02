@@ -229,6 +229,16 @@ if root_nested:
               "content must be plain 'Field: value' lines, not a pipe table (Defender does not render markdown)")
         check('strcat("\\n\\nView in SOCRadar: ", AlarmUrl)' in query,
               "the SOCRadar link must start after a blank line, not glue onto the severity marker")
+        # One alert per alarm. Two overlapping runs see every row and the platform can delay a run
+        # (measured: 5 alerts per alarm, and a new incident 85 s after an analyst closed the first),
+        # so rows whose AlarmId already has a SecurityAlert are dropped before they can alert again.
+        check("join kind=leftanti Alerted on $left.AlarmId == $right.AlertedAlarmId" in query
+              and query.index("join kind=leftanti Alerted") < query.index("summarize arg_max(TimeGenerated, *) by AlarmId"),
+              "rule must drop alarms that already have an alert before it summarizes")
+        check("tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])" in query,
+              "the alerted-AlarmId read must use the double-encoded Custom Details shape measured live")
+        check("union isfuzzy=true (datatable(ExtendedProperties:string)[]), SecurityAlert" in query,
+              "the SecurityAlert read must tolerate a workspace where that table does not exist yet")
         check("extend AlarmDescription = " in query and query.index("| extend DescriptionBody") < query.index("| project "),
               "AlarmDescription must be derived before the projection")
         check("base64_encode_tostring(" in query and "4800" in query and "4900" in query,

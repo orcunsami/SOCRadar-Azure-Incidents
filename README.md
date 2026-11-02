@@ -384,6 +384,7 @@ What is different in `AlertBacked`:
   not as the edge). The rule keeps a 10-minute ingestion window, so the cap keeps a run under
   that. A run that still exceeds the limit gets the rule's default name and Medium severity;
   the alarm id is on the incident's URL entity either way, which is what Sync uses.
+- The rule skips alarms that already have an alert (it reads `SecurityAlert` for the `AlarmId` custom detail), so overlapping runs and delayed runs raise one alert per alarm; without that, closing an incident could be followed by a second incident for the same alarm.
 - Each alarm is written once and the incident is Microsoft Sentinel's to create. If the platform
   skips a rule run (seen once on a fresh test workspace, for about 25 minutes: alerts written, no
   incidents), those alarms are not re-alerted and never get an incident. `Direct` has no such
