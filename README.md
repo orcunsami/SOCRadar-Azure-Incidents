@@ -568,6 +568,10 @@ az deployment group create -g <resource-group> \
 `tools/check_template_drift.py` compares these standalone templates against `azuredeploy.json`
 on every push and PR so they cannot silently fall behind.
 
+Before pushing, run `tools/check_commit_hygiene.sh`: it fails when a commit message in
+`master..HEAD` carries a company id, a workspace or resource group name, an alarm id or an AI
+signature. It can also run as a `commit-msg` hook (`--msg-file`).
+
 ## Hunting Queries
 
 Five queries are deployed with the integration and appear under **Microsoft Sentinel >
