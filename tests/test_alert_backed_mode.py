@@ -296,6 +296,8 @@ if root_nested:
               "and MonitoredAsset from alarm_asset")
         check('IoCUrl1 = iff(IoCUrl1 has "socradar.com", "", IoCUrl1)' in query,
               "a SOCRadar platform link must not become an IoC URL entity")
+        check("pack('Suspicious Domain', SuspiciousDomain," in query,
+              "the Content block must show the extracted phishing domain first, not depend on the payload key")
         check("array_slice(ContentRows, 0, 5)" in query,
               "the Content block must stop at the first 5 fields, not list every field the alarm carries")
         infra_text = open(os.path.join(REPO, "Playbooks", "SOCRadar-Alarms-Infrastructure", "azuredeploy.json")).read()

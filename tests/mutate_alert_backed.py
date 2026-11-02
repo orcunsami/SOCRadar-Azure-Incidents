@@ -258,6 +258,11 @@ def m_domain_from_payload_only(t):
     r["properties"]["query"] = q.replace('extract(@"Phishing Domain:\\s*(\\S+)", 1, AlarmText)', '""')
 
 
+def m_content_domain_from_payload(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("pack('Suspicious Domain', SuspiciousDomain,", "pack('Suspicious Domain', AlarmPayload['phishing_domain'],")
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -290,6 +295,7 @@ MUTATIONS = [
     ("description escapes markdown again", (ROOT, IMPORT), m_description_html_escape),
     ("DNS entity is the regex-found domain again", (ROOT, IMPORT), m_dns_from_regex_domain),
     ("Content block lists every field", (ROOT, IMPORT), m_content_uncapped),
+    ("Content domain read from the payload key", (ROOT, IMPORT), m_content_domain_from_payload),
     ("domain no longer read from the alarm text", (ROOT, IMPORT), m_domain_from_payload_only),
     ("phishing domain not ingested", (ROOT,), m_phishing_domain_not_ingested),
     ("monitored asset dropped from custom details", (ROOT, IMPORT), m_monitored_asset_dropped),
