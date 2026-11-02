@@ -221,6 +221,14 @@ if root_nested:
         check(body_extend is not None and f'"\\n\\n{SEVERITY_MARK}"' in body_extend.group(1)
               and body_extend.group(1).rstrip().endswith('toupper(Severity))'),
               "DescriptionBody must end with the newline + 'SOCRadar severity: ' + toupper(Severity) marker")
+        # The Defender portal shows the description as raw text (measured 2 Nov 2026): a pipe
+        # table appears as "| Field | Value |" rows, and a link glued to the severity line
+        # reads "HIGHView in SOCRadar". So content is "Field: value" lines and the link is
+        # separated by a blank line.
+        check("| Field | Value |" not in query and "|---|" not in query,
+              "content must be plain 'Field: value' lines, not a pipe table (Defender does not render markdown)")
+        check('strcat("\\n\\nView in SOCRadar: ", AlarmUrl)' in query,
+              "the SOCRadar link must start after a blank line, not glue onto the severity marker")
         check("extend AlarmDescription = " in query and query.index("| extend DescriptionBody") < query.index("| project "),
               "AlarmDescription must be derived before the projection")
         check("base64_encode_tostring(" in query and "4800" in query and "4900" in query,

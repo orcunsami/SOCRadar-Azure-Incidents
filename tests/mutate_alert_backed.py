@@ -186,6 +186,18 @@ def m_ioc_column_wrong_index(t):
         "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['ips']?[1], '')}")
 
 
+def m_description_pipe_table(t):
+    r, _ = rule(t)
+    q = r["properties"]["query"]
+    r["properties"]["query"] = q.replace('strcat("Content:\\n\\n", strcat_array(ContentRows, "\\n\\n"))',
+                                         'strcat("Content:\\n\\n| Field | Value |\\n|---|---|\\n", strcat_array(ContentRows, "\\n"))')
+
+
+def m_description_link_glued(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('strcat("\\n\\nView in SOCRadar: "', 'strcat("View in SOCRadar: "')
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -211,6 +223,8 @@ MUTATIONS = [
     ("resolver prefers description", (ROOT, SYNC), m_resolve_prefers_description),
     ("entity mapping dropped", (ROOT, IMPORT), m_entity_mapping_dropped),
     ("IoC enrichment hard-fails ingest", (ROOT, IMPORT), m_ioc_enrichment_hard_fail),
+    ("description goes back to a pipe table", (ROOT, IMPORT), m_description_pipe_table),
+    ("link glued to severity line", (ROOT, IMPORT), m_description_link_glued),
     ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
 ]
 

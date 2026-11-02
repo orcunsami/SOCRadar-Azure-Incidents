@@ -390,10 +390,11 @@ What is different in `AlertBacked`:
   dependency.
 - Incident title `[SOCRadar] #<id> - <title>`; severity mapped as in Direct mode (CRITICAL/HIGH ->
   High, MEDIUM -> Medium, everything else -> Low); label `SOCRadar` only. The description is a
-  markdown report (alarm id/type/severity/status/date, the alarm text, and a content table built
-  from whatever fields the alarm carries -- compromised IPs/domains, malware family/path, asset,
-  tags), budgeted to stay inside the alert description's byte limit, and ends with a
-  `SOCRadar severity: <LEVEL>` line. These incidents carry no `SOCRadar-Severity-*` label, so Sync
+  report of plain "Field: value" lines (alarm id/type/severity/status/date, the alarm text, and
+  one line per field the alarm carries -- compromised IPs/domains, malware family/path, asset,
+  tags), budgeted to stay inside the alert description's byte limit; it has no table because the
+  Defender portal shows the description as raw text. It ends with a `SOCRadar severity: <LEVEL>`
+  line, then the link to the alarm. These incidents carry no `SOCRadar-Severity-*` label, so Sync
   reads the level from that line and severity write-back behaves as in Direct mode; editing the
   line away only switches the write-back off for that incident.
 - The import extracts the first IPv4, domain and URL indicator from the alarm (the same regex
