@@ -255,12 +255,17 @@ def m_monitored_asset_dropped(t):
 def m_domain_from_payload_only(t):
     r, _ = rule(t)
     q = r["properties"]["query"]
-    r["properties"]["query"] = q.replace('extract(@"Phishing Domain:\\s*(\\S+)", 1, AlarmText)', '""')
+    r["properties"]["query"] = q.replace('extract(@"Phishing Domain:\\s*([^\\s,;]+)", 1, AlarmText)', '""')
 
 
 def m_content_domain_from_payload(t):
     r, _ = rule(t)
     r["properties"]["query"] = r["properties"]["query"].replace("pack('Suspicious Domain', SuspiciousDomain,", "pack('Suspicious Domain', AlarmPayload['phishing_domain'],")
+
+
+def m_domain_regex_greedy(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('Phishing Domain:\\s*([^\\s,;]+)', 'Phishing Domain:\\s*(\\S+)')
 
 
 MUTATIONS = [
@@ -297,6 +302,7 @@ MUTATIONS = [
     ("Content block lists every field", (ROOT, IMPORT), m_content_uncapped),
     ("Content domain read from the payload key", (ROOT, IMPORT), m_content_domain_from_payload),
     ("domain no longer read from the alarm text", (ROOT, IMPORT), m_domain_from_payload_only),
+    ("phishing domain regex takes a comma list whole", (ROOT, IMPORT), m_domain_regex_greedy),
     ("phishing domain not ingested", (ROOT,), m_phishing_domain_not_ingested),
     ("monitored asset dropped from custom details", (ROOT, IMPORT), m_monitored_asset_dropped),
     ("rule runs every 5 minutes again", (ROOT, IMPORT), m_five_minute_runs),

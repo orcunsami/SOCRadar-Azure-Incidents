@@ -289,11 +289,24 @@ if root_nested:
               "the regex-found domain and the monitored asset must not be entities")
         check(details.get("SuspiciousDomain") == "SuspiciousDomain" and details.get("MonitoredAsset") == "MonitoredAsset",
               "SuspiciousDomain and MonitoredAsset must be custom details so an automation rule can branch on them")
-        check('extract(@"Phishing Domain:\\s*(\\S+)", 1, AlarmText)' in query
+        check('extract(@"Phishing Domain:\\s*([^\\s,;]+)", 1, AlarmText)' in query
               and "tostring(AlarmPayload['phishing_domain'])" in query and "SuspiciousDomain = tolower(" in query
               and "MonitoredAsset = tostring(AlarmPayload['alarm_asset'])" in query,
               "SuspiciousDomain must come from the 'Phishing Domain:' line of the alarm text (payload key as fallback) "
               "and MonitoredAsset from alarm_asset")
+        # The extraction regex must take only the first token: "Phishing Domain: foo.com,bar.com"
+        # used to become one invalid DNS value. Run the very regex the rule carries.
+        m_dom = re.search(r'extract\(@"(Phishing Domain:[^"]+)", 1, AlarmText\)', query)
+        check(m_dom is not None, "could not find the Phishing Domain extraction in the rule query")
+        if m_dom:
+            dom_re = m_dom.group(1)
+            for text, want in (("Phishing Domain: foo.com,bar.com Score: 80", "foo.com"),
+                               ("Phishing Domain: a.example;b.example x", "a.example"),
+                               ("Phishing Domain: evil-example.com Score: 1", "evil-example.com"),
+                               ("Phishing Domain: evil-example.com. Score: 1", "evil-example.com.")):
+                hit = re.search(dom_re, text)
+                check(hit is not None and hit.group(1) == want,
+                      f"Phishing Domain regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
         check('IoCUrl1 = iff(IoCUrl1 has "socradar.com", "", IoCUrl1)' in query,
               "a SOCRadar platform link must not become an IoC URL entity")
         check("pack('Suspicious Domain', SuspiciousDomain," in query,
