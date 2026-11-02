@@ -65,8 +65,13 @@ def m_take_150(t):
 
 
 def m_group_by_nothing(t):
+    # Grouping moved from the URL entity to the AlarmId custom detail (task_azure_0098:
+    # once IoC URL entities exist, two unrelated alarms could share one and wrongly merge).
+    # Mutate by reverting to the old, now-wrong state.
     r, _ = rule(t)
-    r["properties"]["incidentConfiguration"]["groupingConfiguration"]["groupByEntities"] = []
+    gc = r["properties"]["incidentConfiguration"]["groupingConfiguration"]
+    gc["groupByEntities"] = ["URL"]
+    gc["groupByCustomDetails"] = []
 
 
 def m_reopen_closed(t):
@@ -165,6 +170,22 @@ def m_sync_reads_any_url(t):
     find(actions, "Filter_Alarm_Url_Entities")["inputs"]["where"] = "@equals(item()?['kind'], 'Url')"
 
 
+def m_entity_mapping_dropped(t):
+    r, _ = rule(t)
+    r["properties"]["entityMappings"] = r["properties"]["entityMappings"][:-1]
+
+
+def m_ioc_enrichment_hard_fail(t):
+    actions = workflow(t, "import")["properties"]["definition"]["actions"]
+    find(actions, "Parse_AlertBacked_IoC_Arrays")["runAfter"] = {"Run_AlertBacked_IoC_Regex_Query": ["Succeeded"]}
+
+
+def m_ioc_column_wrong_index(t):
+    actions = workflow(t, "import")["properties"]["definition"]["actions"]
+    find(actions, "Ingest_Alarm_Row")["inputs"]["body"][0]["IoCIp1"] = (
+        "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['ips']?[1], '')}")
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -188,6 +209,9 @@ MUTATIONS = [
     ("rank reads labels only", (ROOT, SYNC), m_rank_reads_labels_only),
     ("description reader maps CRITICAL wrong", (ROOT, SYNC), m_description_skips_critical),
     ("resolver prefers description", (ROOT, SYNC), m_resolve_prefers_description),
+    ("entity mapping dropped", (ROOT, IMPORT), m_entity_mapping_dropped),
+    ("IoC enrichment hard-fails ingest", (ROOT, IMPORT), m_ioc_enrichment_hard_fail),
+    ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
 ]
 
 

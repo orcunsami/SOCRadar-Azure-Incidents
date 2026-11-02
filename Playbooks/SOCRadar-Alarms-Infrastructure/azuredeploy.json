@@ -11,18 +11,24 @@
     "parameters": {
         "WorkspaceName": {
             "type": "string",
-            "metadata": { "description": "NOT RECOMMENDED: deploy azuredeploy.json from the repository root instead. --- Microsoft Sentinel Log Analytics Workspace Name" }
+            "metadata": {
+                "description": "NOT RECOMMENDED: deploy azuredeploy.json from the repository root instead. --- Microsoft Sentinel Log Analytics Workspace Name"
+            }
         },
         "WorkspaceLocation": {
             "type": "string",
-            "metadata": { "description": "Region of the Log Analytics workspace (e.g., centralus, northeurope). This is the region of the WORKSPACE, which can differ from the region of the resource group you deploy into; read it from the workspace Overview blade rather than assuming. A wrong value fails the deployment with LinkedResourceNotFound: Linked Workspace ... was not found in location <region>; if the workspace name is correct, that error means this parameter is wrong." }
+            "metadata": {
+                "description": "Region of the Log Analytics workspace (e.g., centralus, northeurope). This is the region of the WORKSPACE, which can differ from the region of the resource group you deploy into; read it from the workspace Overview blade rather than assuming. A wrong value fails the deployment with LinkedResourceNotFound: Linked Workspace ... was not found in location <region>; if the workspace name is correct, that error means this parameter is wrong."
+            }
         },
         "TableRetentionDays": {
             "type": "int",
             "defaultValue": 90,
             "minValue": 30,
             "maxValue": 730,
-            "metadata": { "description": "Data retention in days (30-730)" }
+            "metadata": {
+                "description": "Data retention in days (30-730)"
+            }
         }
     },
     "variables": {
@@ -53,17 +59,106 @@
                 "schema": {
                     "name": "[variables('AlarmsTableName')]",
                     "columns": [
-                        { "name": "TimeGenerated", "type": "datetime", "description": "Ingestion timestamp" },
-                        { "name": "AlarmId", "type": "string", "description": "SOCRadar alarm ID" },
-                        { "name": "CompanyId", "type": "string", "description": "SOCRadar company ID" },
-                        { "name": "AlarmMainType", "type": "string", "description": "Main alarm category" },
-                        { "name": "AlarmSubType", "type": "string", "description": "Alarm sub-category" },
-                        { "name": "Severity", "type": "string", "description": "CRITICAL/HIGH/MEDIUM/LOW/INFO" },
-                        { "name": "Status", "type": "string", "description": "Alarm status" },
-                        { "name": "Title", "type": "string", "description": "Alarm title" },
-                        { "name": "AlarmText", "type": "string", "description": "Alarm description (truncated to 4000 chars)" },
-                        { "name": "AlarmDate", "type": "string", "description": "Original alarm date from SOCRadar" },
-                        { "name": "AlarmPayload", "type": "dynamic", "description": "Full SOCRadar alarm JSON" }
+                        {
+                            "name": "TimeGenerated",
+                            "type": "datetime",
+                            "description": "Ingestion timestamp"
+                        },
+                        {
+                            "name": "AlarmId",
+                            "type": "string",
+                            "description": "SOCRadar alarm ID"
+                        },
+                        {
+                            "name": "CompanyId",
+                            "type": "string",
+                            "description": "SOCRadar company ID"
+                        },
+                        {
+                            "name": "AlarmMainType",
+                            "type": "string",
+                            "description": "Main alarm category"
+                        },
+                        {
+                            "name": "AlarmSubType",
+                            "type": "string",
+                            "description": "Alarm sub-category"
+                        },
+                        {
+                            "name": "Severity",
+                            "type": "string",
+                            "description": "CRITICAL/HIGH/MEDIUM/LOW/INFO"
+                        },
+                        {
+                            "name": "Status",
+                            "type": "string",
+                            "description": "Alarm status"
+                        },
+                        {
+                            "name": "Title",
+                            "type": "string",
+                            "description": "Alarm title"
+                        },
+                        {
+                            "name": "AlarmText",
+                            "type": "string",
+                            "description": "Alarm description (truncated to 4000 chars)"
+                        },
+                        {
+                            "name": "AlarmDate",
+                            "type": "string",
+                            "description": "Original alarm date from SOCRadar"
+                        },
+                        {
+                            "name": "AlarmPayload",
+                            "type": "dynamic",
+                            "description": "Full SOCRadar alarm JSON"
+                        },
+                        {
+                            "name": "IoCIp1",
+                            "type": "string",
+                            "description": "First-3 IPv4 indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCIp2",
+                            "type": "string",
+                            "description": "First-3 IPv4 indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCIp3",
+                            "type": "string",
+                            "description": "First-3 IPv4 indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCDomain1",
+                            "type": "string",
+                            "description": "First-3 domain indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCDomain2",
+                            "type": "string",
+                            "description": "First-3 domain indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCDomain3",
+                            "type": "string",
+                            "description": "First-3 domain indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCUrl1",
+                            "type": "string",
+                            "description": "First-3 URL indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCUrl2",
+                            "type": "string",
+                            "description": "First-3 URL indicator extracted from the alarm (empty if none)"
+                        },
+                        {
+                            "name": "IoCUrl3",
+                            "type": "string",
+                            "description": "First-3 URL indicator extracted from the alarm (empty if none)"
+                        }
                     ]
                 },
                 "retentionInDays": "[parameters('TableRetentionDays')]",
@@ -85,17 +180,86 @@
                 "streamDeclarations": {
                     "[variables('AlarmsStreamName')]": {
                         "columns": [
-                            { "name": "TimeGenerated", "type": "datetime" },
-                            { "name": "AlarmId", "type": "string" },
-                            { "name": "CompanyId", "type": "string" },
-                            { "name": "AlarmMainType", "type": "string" },
-                            { "name": "AlarmSubType", "type": "string" },
-                            { "name": "Severity", "type": "string" },
-                            { "name": "Status", "type": "string" },
-                            { "name": "Title", "type": "string" },
-                            { "name": "AlarmText", "type": "string" },
-                            { "name": "AlarmDate", "type": "string" },
-                            { "name": "AlarmPayload", "type": "dynamic" }
+                            {
+                                "name": "TimeGenerated",
+                                "type": "datetime"
+                            },
+                            {
+                                "name": "AlarmId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "CompanyId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "AlarmMainType",
+                                "type": "string"
+                            },
+                            {
+                                "name": "AlarmSubType",
+                                "type": "string"
+                            },
+                            {
+                                "name": "Severity",
+                                "type": "string"
+                            },
+                            {
+                                "name": "Status",
+                                "type": "string"
+                            },
+                            {
+                                "name": "Title",
+                                "type": "string"
+                            },
+                            {
+                                "name": "AlarmText",
+                                "type": "string"
+                            },
+                            {
+                                "name": "AlarmDate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "AlarmPayload",
+                                "type": "dynamic"
+                            },
+                            {
+                                "name": "IoCIp1",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCIp2",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCIp3",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCDomain1",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCDomain2",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCDomain3",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCUrl1",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCUrl2",
+                                "type": "string"
+                            },
+                            {
+                                "name": "IoCUrl3",
+                                "type": "string"
+                            }
                         ]
                     }
                 },
@@ -109,8 +273,12 @@
                 },
                 "dataFlows": [
                     {
-                        "streams": [ "[variables('AlarmsStreamName')]" ],
-                        "destinations": [ "workspace" ],
+                        "streams": [
+                            "[variables('AlarmsStreamName')]"
+                        ],
+                        "destinations": [
+                            "workspace"
+                        ],
                         "transformKql": "source | extend AlarmPayload = pack('alarm_id', AlarmPayload['alarm_id'], 'status', AlarmPayload['status'], 'alarm_risk_level', AlarmPayload['alarm_risk_level'], 'alarm_text', AlarmPayload['alarm_text'], 'alarm_type_details', AlarmPayload['alarm_type_details'], 'alarm_asset', AlarmPayload['alarm_asset'], 'date', AlarmPayload['date'], 'tags', AlarmPayload['tags'], 'compromised_domains', AlarmPayload['content']['compromised_domains'], 'compromised_ips', AlarmPayload['content']['compromised_ips'], 'malware_family', AlarmPayload['content']['malware_family'], 'malware_path', AlarmPayload['content']['malware_path'])",
                         "outputStream": "[variables('AlarmsStreamName')]"
                     }

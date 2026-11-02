@@ -389,18 +389,27 @@ What is different in `AlertBacked`:
   incidents), those alarms are not re-alerted and never get an incident. `Direct` has no such
   dependency.
 - Incident title `[SOCRadar] #<id> - <title>`; severity mapped as in Direct mode (CRITICAL/HIGH ->
-  High, MEDIUM -> Medium, everything else -> Low); label `SOCRadar` only. The description is the
-  alarm text followed by a `SOCRadar severity: <LEVEL>` line. These incidents carry no
-  `SOCRadar-Severity-*` label, so Sync reads the level from that line and severity write-back
-  behaves as in Direct mode; editing the line away only switches the write-back off for that
-  incident.
+  High, MEDIUM -> Medium, everything else -> Low); label `SOCRadar` only. The description is a
+  markdown report (alarm id/type/severity/status/date, the alarm text, and a content table built
+  from whatever fields the alarm carries -- compromised IPs/domains, malware family/path, asset,
+  tags), budgeted to stay inside the alert description's byte limit, and ends with a
+  `SOCRadar severity: <LEVEL>` line. These incidents carry no `SOCRadar-Severity-*` label, so Sync
+  reads the level from that line and severity write-back behaves as in Direct mode; editing the
+  line away only switches the write-back off for that incident.
+- The import extracts up to 3 IPv4, 3 domain and 3 URL indicators from the alarm (the same regex
+  technique Direct mode uses for its bookmark enrichment) and writes them to the row; the rule
+  maps each one as its own entity, so an `AlertBacked` incident's Entities tab is populated the
+  same run the incident is created. Together with `AlarmUrl` that is 10 entity mappings, the
+  rule's platform ceiling -- no more entities can be added without dropping one of these. Incident
+  grouping keys off the `AlarmId` custom detail rather than an entity, so two different alarms
+  that happen to share an IoC indicator do not merge into one incident.
 - Every alarm row is seen by two consecutive rule runs: the 10-minute window overlaps the
   5-minute interval on purpose, because a late run must not skip rows and a skipped row is never
   retried. The second alert joins the same incident, so an incident normally shows 2 alerts. An
   incident closed inside those 10 minutes comes back once as a new incident; close it again.
-- Upgrading an `AlertBacked` install from a version with the older `.../alarm/<id>` link: the
-  alert groups by that URL, so an alarm whose row lands in the 10 minutes around the redeploy can
-  get a second incident once. Close it; Sync handles both.
+- Upgrading an `AlertBacked` install from an older version: the alert groups by the `AlarmId`
+  custom detail, so an alarm whose row lands in the 10 minutes around the redeploy can get a
+  second incident once. Close it; Sync handles both.
 - Verified against a workspace that is not connected to Microsoft Defender XDR. On a connected
   workspace Defender names the incident: Sync still finds the alarm through the URL entity, but
   the severity line may be absent, in which case that incident's severity is not written back.

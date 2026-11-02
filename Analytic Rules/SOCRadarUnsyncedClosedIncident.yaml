@@ -14,6 +14,10 @@ tactics:
 relevantTechniques:
   - T1526
 query: |
+    // AlertBacked incidents carry no SOCRadar-Alarm-<id> label (only the plain
+    // SOCRadar label), and Defender's correlation engine can rename the title away
+    // from the #<id> the import wrote. When the title no longer has it, fall back
+    // to the AlarmId custom detail recorded on the incident's one backing alert.
     SecurityIncident
     | summarize arg_max(TimeGenerated, *) by IncidentNumber
     | where Labels has "SOCRadar"
@@ -21,6 +25,13 @@ query: |
     | where LastModifiedTime < ago(30m)
     | where not(Labels has "Synced")
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
+    | extend AlertGuid = tostring(todynamic(AlertIds)[0])
+    | join kind=leftouter (
+        SecurityAlert
+        | summarize arg_max(TimeGenerated, *) by SystemAlertId
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+    ) on $left.AlertGuid == $right.SystemAlertId
+    | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
     | extend AccountName = AlarmId
     | project TimeGenerated, IncidentName, Title, Status, Classification, LastModifiedTime, AlarmId, AccountName
 entityMappings:

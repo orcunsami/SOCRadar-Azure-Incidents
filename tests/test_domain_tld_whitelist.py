@@ -32,9 +32,11 @@ TEMPLATES = ["azuredeploy.json", "Playbooks/SOCRadar-Alarm-Import/azuredeploy.js
 # Source: https://data.iana.org/TLD/tlds-alpha-by-domain.txt, Version 2026091400.
 CCTLD_FILE = os.path.join(HERE, "iana-cctld-2letter.txt")
 
-# Both KQL queries that extract domains. Naming them keeps the count honest: if a
-# third extraction site appears, the count assert below fails.
-EXPECTED_QUERIES = 2
+# All KQL queries that extract domains: Direct mode's live extraction, its Backfill
+# twin, and AlertBacked's own copy (added for Defender IoC entities, task_azure_0098).
+# Naming them keeps the count honest: if a fourth extraction site appears, the count
+# assert below fails.
+EXPECTED_QUERIES = 3
 
 DOMS_RX = re.compile(r"extend Doms0 = extract_all\(@'(.*?)', tolower\(nourl\)\)")
 # The alternation after the label-repeat group, e.g. "(?:ac|ad|...|com|net|...)"

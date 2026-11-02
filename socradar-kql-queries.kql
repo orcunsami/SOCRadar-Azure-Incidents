@@ -38,6 +38,15 @@ SOCRadar_Alarms_CL
     | where TimeGenerated > ago(7d)
     | where Title contains "[SOCRadar]"
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
+    // Fallback for AlertBacked incidents Defender renamed: the AlarmId custom detail
+    // on the incident's one backing alert, same pattern as SOCRadarUnsyncedClosedIncident.
+    | extend AlertGuid = tostring(todynamic(AlertIds)[0])
+    | join kind=leftouter (
+        SecurityAlert
+        | summarize arg_max(TimeGenerated, *) by SystemAlertId
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+    ) on $left.AlertGuid == $right.SystemAlertId
+    | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
 ) on $left.AlarmId == $right.AlarmId
 | project
     AlarmId,
@@ -58,6 +67,13 @@ SOCRadar_Alarms_CL
     | where TimeGenerated > ago(24h)
     | where Title contains "[SOCRadar]"
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
+    | extend AlertGuid = tostring(todynamic(AlertIds)[0])
+    | join kind=leftouter (
+        SecurityAlert
+        | summarize arg_max(TimeGenerated, *) by SystemAlertId
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+    ) on $left.AlertGuid == $right.SystemAlertId
+    | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
 ) on AlarmId
 | project TimeGenerated, AlarmId, Title, Severity
 
@@ -166,6 +182,13 @@ SOCRadar_Alarms_CL
     SecurityIncident
     | summarize arg_max(TimeGenerated, *) by IncidentNumber
     | extend AlarmId = extract(@"#(\d+)", 1, Title)
+    | extend AlertGuid = tostring(todynamic(AlertIds)[0])
+    | join kind=leftouter (
+        SecurityAlert
+        | summarize arg_max(TimeGenerated, *) by SystemAlertId
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+    ) on $left.AlertGuid == $right.SystemAlertId
+    | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
 ) on AlarmId
 | where isempty(Status1) or Status1 != "Closed"
 | project

@@ -211,12 +211,20 @@ if root_nested:
         # only channel Sync can read without new credentials, and the label is not there.
         check(override.get("alertDescriptionFormat") == "{{AlarmDescription}}",
               "alert description must be the composed AlarmDescription column")
-        extend = re.search(r"\| extend AlarmDescription = ([^\n]+)", query)
-        check(extend is not None and "substring(AlarmText, 0, 1500)" in extend.group(1)
-              and f'"\\n\\n{SEVERITY_MARK}"' in extend.group(1) and "toupper(Severity)" in extend.group(1),
-              "AlarmDescription must be substring(AlarmText, 0, 1500) + newline + 'SOCRadar severity: ' + toupper(Severity)")
-        check(extend is not None and query.index("| extend AlarmDescription") < query.index("| project "),
+        # The description is a markdown report (SOCRadar Alarm header, details, content table,
+        # byte-budgeted link) rather than a flat substring; the two invariants Sync and the
+        # 4800-byte budget actually depend on are that AlarmText still feeds it and the
+        # severity marker still closes it.
+        body_extend = re.search(r"\| extend DescriptionBody = ([^\n]+)", query)
+        check("substring(AlarmText, 0, 1500)" in query,
+              "AlarmDescription must still derive from substring(AlarmText, 0, 1500)")
+        check(body_extend is not None and f'"\\n\\n{SEVERITY_MARK}"' in body_extend.group(1)
+              and body_extend.group(1).rstrip().endswith('toupper(Severity))'),
+              "DescriptionBody must end with the newline + 'SOCRadar severity: ' + toupper(Severity) marker")
+        check("extend AlarmDescription = " in query and query.index("| extend DescriptionBody") < query.index("| project "),
               "AlarmDescription must be derived before the projection")
+        check("base64_encode_tostring(" in query and "4800" in query and "4900" in query,
+              "AlarmDescription must stay inside the 4800/4900-byte alert-description budget")
         for level, mapped in (("CRITICAL", "High"), ("HIGH", "High"), ("MEDIUM", "Medium")):
             check(f'"{level}"' in query and f'"{mapped}"' in query,
                   f"severity mapping {level}->{mapped} missing from the rule query")
@@ -229,18 +237,36 @@ if root_nested:
         check(details.get("AlarmId") == "AlarmId", "AlarmId must be a custom detail")
 
         mappings = props.get("entityMappings", [])
-        url = [m for m in mappings if m.get("entityType") == "URL"]
-        check(len(url) == 1 and url[0]["fieldMappings"] == [{"identifier": "Url", "columnName": "AlarmUrl"}],
-              "the alarm URL must be mapped as the URL entity: it is the identity that survives the 50-value cliff")
+        # AlarmUrl stays first: it is the one entity every alarm always has, used to be the
+        # grouping key before IoC entities existed. The 9 IoC entities (first 3 IPs/domains/
+        # URLs the Logic App regex-extracted from the alarm, same technique Direct mode uses
+        # for bookmark enrichment) ride alongside it, one column each -- Sentinel does not
+        # expand an array column into several entities from a single row.
+        check(mappings and mappings[0] == {"entityType": "URL", "fieldMappings": [{"identifier": "Url", "columnName": "AlarmUrl"}]},
+              "AlarmUrl must still be the first URL entity mapping")
+        check(len(mappings) == 10, f"entityMappings must total 10 (platform cap): found {len(mappings)}")
+        ioc_cols = {"IoCIp1": "Address", "IoCIp2": "Address", "IoCIp3": "Address",
+                    "IoCDomain1": "DomainName", "IoCDomain2": "DomainName", "IoCDomain3": "DomainName",
+                    "IoCUrl1": "Url", "IoCUrl2": "Url", "IoCUrl3": "Url"}
+        by_col = {m["fieldMappings"][0]["columnName"]: (m["entityType"], m["fieldMappings"][0]["identifier"])
+                  for m in mappings[1:]}
+        for col, identifier in ioc_cols.items():
+            expected_type = "IP" if col.startswith("IoCIp") else ("DNS" if col.startswith("IoCDomain") else "URL")
+            check(by_col.get(col) == (expected_type, identifier),
+                  f"entityMappings must map {col} as a single-identifier {expected_type} entity")
         check('strcat("https://platform.socradar.com/app/company/", CompanyId, '
               '"/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)' in query,
               "AlarmUrl must open the alarm in the platform (field=alarmId ... value=<id>), the shape Sync parses")
 
         grouping = props.get("incidentConfiguration", {}).get("groupingConfiguration", {})
         check(props.get("incidentConfiguration", {}).get("createIncident") is True, "rule must create incidents")
+        # Grouping moved off the URL entity once IoC URL entities were added: two different
+        # alarms that happen to share one IoC URL must not merge into one incident. AlarmId
+        # is already a unique custom detail per alarm, so group on that instead.
         check(grouping.get("enabled") is True and grouping.get("matchingMethod") == "Selected"
-              and grouping.get("groupByEntities") == ["URL"],
-              "alerts must group into one incident by the URL entity (duplicate alerts of one alarm)")
+              and grouping.get("groupByEntities") == [] and grouping.get("groupByCustomDetails") == ["AlarmId"],
+              "alerts must group into one incident by the AlarmId custom detail (duplicate alerts of one alarm, "
+              "without merging unrelated alarms that share an IoC entity)")
         check(grouping.get("lookbackDuration") == "P7D", "grouping lookback must be the 7-day platform maximum")
         check(grouping.get("reopenClosedIncident") is False, "a duplicate alert must never reopen a closed incident")
 
@@ -339,11 +365,34 @@ for path, template in ((ROOT, root), (IMPORT, import_pb)):
         _, is_new = by_name(actions, "Check_Alarm_Is_New")
         check(is_new and "404" in json.dumps(is_new["expression"]), f"{label}: Check_Alarm_Is_New must test for 404")
 
+        IOC_COLUMNS = ["IoCIp1", "IoCIp2", "IoCIp3", "IoCDomain1", "IoCDomain2", "IoCDomain3",
+                       "IoCUrl1", "IoCUrl2", "IoCUrl3"]
         _, ingest = by_name(actions, "Ingest_Alarm_Row")
         _, direct_ingest = by_name(actions, "Ingest_To_Custom_Table")
-        check(ingest and ingest["inputs"]["method"] == "POST"
-              and list(ingest["inputs"]["body"][0].keys()) == list(direct_ingest["inputs"]["body"][0].keys()),
-              f"{label}: Ingest_Alarm_Row must write the same columns as the Direct-mode ingest")
+        ingest_cols = list(ingest["inputs"]["body"][0].keys()) if ingest else []
+        direct_cols = list(direct_ingest["inputs"]["body"][0].keys()) if direct_ingest else []
+        # AlertBacked writes every Direct-mode column plus the 9 IoC columns (its own entity
+        # mappings, since the alert-backed path cannot run Direct's bookmark-based enrichment).
+        check(ingest and ingest["inputs"]["method"] == "POST" and direct_cols
+              and all(c in ingest_cols for c in direct_cols)
+              and [c for c in ingest_cols if c not in direct_cols] == IOC_COLUMNS,
+              f"{label}: Ingest_Alarm_Row must write every Direct-mode column plus exactly the 9 IoC columns")
+        for i, col in enumerate(("ips", "ips", "ips", "domains", "domains", "domains", "urls", "urls", "urls")):
+            idx = i % 3
+            name = IOC_COLUMNS[i]
+            check(ingest and ingest["inputs"]["body"][0].get(name)
+                  == f"@{{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['{col}']?[{idx}], '')}}",
+                  f"{label}: {name} must read Parse_AlertBacked_IoC_Arrays['{col}'][{idx}], defaulting to ''")
+        _, parse = by_name(actions, "Parse_AlertBacked_IoC_Arrays")
+        check(parse and ingest and ingest["runAfter"] == {"Parse_AlertBacked_IoC_Arrays": ["Succeeded"]},
+              f"{label}: Ingest_Alarm_Row must run after Parse_AlertBacked_IoC_Arrays")
+        _, run_regex = by_name(actions, "Run_AlertBacked_IoC_Regex_Query")
+        check(parse and run_regex and set(parse["runAfter"].get("Run_AlertBacked_IoC_Regex_Query", []))
+              == {"Succeeded", "Failed", "TimedOut"},
+              f"{label}: Parse_AlertBacked_IoC_Arrays must run regardless of the regex call's outcome "
+              "(enrichment failures must never block ingestion)")
+        check(run_regex and "retryPolicy" in run_regex["inputs"],
+              f"{label}: Run_AlertBacked_IoC_Regex_Query must declare its retryPolicy inside inputs")
         check(ingest and f"items('{LOOP}')" in json.dumps(ingest["inputs"]) and "items('For_Each_Alarm')" not in json.dumps(ingest["inputs"]),
               f"{label}: Ingest_Alarm_Row must read its own loop item")
         _, write = by_name(actions, "Write_Seen_Marker")

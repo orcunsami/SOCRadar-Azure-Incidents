@@ -1708,6 +1708,53 @@
                                                                 ]
                                                             },
                                                             "actions": {
+                                                                "Compose_AlertBacked_IoC_Source": {
+                                                                    "type": "Compose",
+                                                                    "runAfter": {},
+                                                                    "inputs": "@replace(replace(replace(replace(concat(coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_text'], ''), ' ', string(coalesce(items('For_Each_Alarm_AlertBacked')?['content'], ''))), '[.]', '.'), '(.)', '.'), 'hxxps://', 'https://'), 'hxxp://', 'http://')"
+                                                                },
+                                                                "Run_AlertBacked_IoC_Regex_Query": {
+                                                                    "type": "Http",
+                                                                    "runAfter": {
+                                                                        "Compose_AlertBacked_IoC_Source": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "inputs": {
+                                                                        "method": "POST",
+                                                                        "uri": "https://api.loganalytics.io/v1/workspaces/@{parameters('WorkspaceId')}/query",
+                                                                        "headers": {
+                                                                            "Content-Type": "application/json"
+                                                                        },
+                                                                        "authentication": {
+                                                                            "type": "ManagedServiceIdentity",
+                                                                            "audience": "https://api.loganalytics.io"
+                                                                        },
+                                                                        "body": {
+                                                                            "query": "print raw = base64_decode_tostring('@{base64(outputs('Compose_AlertBacked_IoC_Source'))}') | extend Urls0 = extract_all(@'(https?://[^\\s\"<>\\]\\)},;\\\\]+)', raw) | extend nourl = replace_regex(raw, @'https?://[^\\s\"<>\\]\\)},;]+', ' ') | extend Ips0 = extract_all(@'\\b((?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})\\b', nourl) | extend Doms0 = extract_all(@'\\b((?:[a-z0-9][a-z0-9-]{0,62}\\.)+(?:ac|ad|ae|af|ag|ai|al|am|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cu|cv|cw|cx|cy|cz|de|dj|dk|dm|do|dz|ec|ee|eg|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|za|zm|zw|com|net|org|info|biz|edu|gov|mil|int|app|dev|cloud|online|site|shop|club|live|link|xyz|top|icu|buzz|tech|store|space|website|host|press|digital|agency|solutions|services|systems|network|email|group|world|life|today|news|media|works|zone|center|company|expert|tools|support|care|best|run|click|download|stream|review|date|loan|men|win|bid|trade|party|science|work|wiki|fun|rest|quest|monster|cyou|sbs|lol|help|pro|name|mobi|asia|tel|travel|jobs|museum|aero|coop|cat|post|blog|page|ninja|guru|team|design|studio|software|finance|capital|fund|bank|insure|legal|clinic|health|dental|vision|coach|academy|school|college|university|institute))\\b', tolower(nourl)) | mv-expand D = iff(array_length(Doms0) == 0, dynamic(['']), Doms0) to typeof(string) | where isempty(D) or (D != 'socradar.com' and D !endswith '.socradar.com' and not(D matches regex @'\\.(png|jpe?g|gif|svg|ico|css|js|txt|json|xml|csv|pdf|docx?|xlsx?|pptx?|exe|dll)$')) | summarize Ips0 = take_any(Ips0), Urls0 = take_any(Urls0), Doms = make_set_if(D, isnotempty(D)) | mv-expand U = iff(array_length(Urls0) == 0, dynamic(['']), Urls0) to typeof(string) | extend U = trim_end(@'[.,;:!?\\\\]+', U) | summarize Ips0 = take_any(Ips0), Doms = take_any(Doms), Urls = make_set_if(U, isnotempty(U)) | project Ips = array_sort_asc(set_union(Ips0, dynamic([]))), Domains = array_sort_asc(set_union(Doms, dynamic([]))), Urls = array_sort_asc(set_union(Urls, dynamic([])))"
+                                                                        },
+                                                                        "retryPolicy": {
+                                                                            "type": "exponential",
+                                                                            "count": 3,
+                                                                            "interval": "PT10S"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "Parse_AlertBacked_IoC_Arrays": {
+                                                                    "type": "Compose",
+                                                                    "runAfter": {
+                                                                        "Run_AlertBacked_IoC_Regex_Query": [
+                                                                            "Succeeded",
+                                                                            "Failed",
+                                                                            "TimedOut"
+                                                                        ]
+                                                                    },
+                                                                    "inputs": {
+                                                                        "ips": "@json(string(coalesce(body('Run_AlertBacked_IoC_Regex_Query')?['tables']?[0]?['rows']?[0]?[0], '[]')))",
+                                                                        "domains": "@json(string(coalesce(body('Run_AlertBacked_IoC_Regex_Query')?['tables']?[0]?['rows']?[0]?[1], '[]')))",
+                                                                        "urls": "@json(string(coalesce(body('Run_AlertBacked_IoC_Regex_Query')?['tables']?[0]?['rows']?[0]?[2], '[]')))"
+                                                                    }
+                                                                },
                                                                 "Ingest_Alarm_Row": {
                                                                     "type": "Http",
                                                                     "inputs": {
@@ -1732,7 +1779,16 @@
                                                                                 "Title": "@{coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_type_details']?['alarm_generic_title'], 'SOCRadar Alarm')}",
                                                                                 "AlarmText": "@{take(coalesce(items('For_Each_Alarm_AlertBacked')?['alarm_text'], ''), 4000)}",
                                                                                 "AlarmDate": "@{items('For_Each_Alarm_AlertBacked')?['date']}",
-                                                                                "AlarmPayload": "@items('For_Each_Alarm_AlertBacked')"
+                                                                                "AlarmPayload": "@items('For_Each_Alarm_AlertBacked')",
+                                                                                "IoCIp1": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['ips']?[0], '')}",
+                                                                                "IoCIp2": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['ips']?[1], '')}",
+                                                                                "IoCIp3": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['ips']?[2], '')}",
+                                                                                "IoCDomain1": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['domains']?[0], '')}",
+                                                                                "IoCDomain2": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['domains']?[1], '')}",
+                                                                                "IoCDomain3": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['domains']?[2], '')}",
+                                                                                "IoCUrl1": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['urls']?[0], '')}",
+                                                                                "IoCUrl2": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['urls']?[1], '')}",
+                                                                                "IoCUrl3": "@{coalesce(outputs('Parse_AlertBacked_IoC_Arrays')?['urls']?[2], '')}"
                                                                             }
                                                                         ],
                                                                         "retryPolicy": {
@@ -1742,7 +1798,11 @@
                                                                             "maximumInterval": "PT1M"
                                                                         }
                                                                     },
-                                                                    "runAfter": {}
+                                                                    "runAfter": {
+                                                                        "Parse_AlertBacked_IoC_Arrays": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    }
                                                                 },
                                                                 "Write_Seen_Marker": {
                                                                     "type": "Http",
@@ -2697,7 +2757,7 @@
                                 "description": "Raises one alert, and one incident, for every SOCRadar alarm the import Logic App writes to SOCRadar_Alarms_CL. Deployed only when IncidentMode is AlertBacked.",
                                 "severity": "Medium",
                                 "enabled": true,
-                                "query": "SOCRadar_Alarms_CL\n| where ingestion_time() > ago(10m)\n| where toupper(Status) == \"OPEN\"\n| where isnotempty(AlarmId)\n| summarize arg_max(TimeGenerated, *) by AlarmId\n| extend AlarmUrl = strcat(\"https://platform.socradar.com/app/company/\", CompanyId, \"/alarm-management?tab=approved&field=alarmId&operator=equals&value=\", AlarmId)\n| extend SentinelSeverity = case(toupper(Severity) in (\"CRITICAL\", \"HIGH\"), \"High\", toupper(Severity) == \"MEDIUM\", \"Medium\", \"Low\")\n| extend AlarmDescription = strcat(substring(AlarmText, 0, 1500), \"\\n\\nSOCRadar severity: \", toupper(Severity))\n| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText, AlarmDescription, AlarmMainType, AlarmSubType, Severity, Status, AlarmDate, AlarmUrl, SentinelSeverity\n| order by TimeGenerated asc\n| take 149",
+                                "query": "SOCRadar_Alarms_CL\n| where ingestion_time() > ago(10m)\n| where toupper(Status) == \"OPEN\"\n| where isnotempty(AlarmId)\n| summarize arg_max(TimeGenerated, *) by AlarmId\n| extend AlarmUrl = strcat(\"https://platform.socradar.com/app/company/\", CompanyId, \"/alarm-management?tab=approved&field=alarmId&operator=equals&value=\", AlarmId)\n| extend SentinelSeverity = case(toupper(Severity) in (\"CRITICAL\", \"HIGH\"), \"High\", toupper(Severity) == \"MEDIUM\", \"Medium\", \"Low\")\n| extend AlarmContent = pack('Compromised Domains', AlarmPayload['compromised_domains'], 'Compromised IPs', AlarmPayload['compromised_ips'], 'Malware Family', AlarmPayload['malware_family'], 'Malware Path', AlarmPayload['malware_path'], 'Asset', AlarmPayload['alarm_asset'], 'Tags', AlarmPayload['tags'])\n| mv-apply ContentKey = bag_keys(AlarmContent) to typeof(string) on (\n    extend RawValue = trim(@\"\\s\", replace_string(replace_string(replace_string(tostring(AlarmContent[ContentKey]), \"\\r\", \"\"), \"\\n\", \" \"), \"`\", \"''\"))\n    | where isnotempty(RawValue) and RawValue !in (\"[]\", \"{}\", \"null\", \"\\\"\\\"\")\n    | extend SafeValue = replace_string(replace_string(replace_string(RawValue, \"<\", \"&lt;\"), \">\", \"&gt;\"), \"|\", \"\\\\|\")\n    | extend CellValue = case(\n        RawValue startswith \"[\\\"\", replace_string(replace_string(replace_string(replace_string(SafeValue, \"[\\\"\", \"\"), \"\\\"]\", \"\"), \"\\\",\\\"\", \", \"), \"\\\"\", \"\"),\n        RawValue startswith \"{\\\"\" or RawValue startswith \"[{\", replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(SafeValue, \"[{\", \"\"), \"}]\", \"\"), \"},{\", \" / \"), \"\\\",\\\"\", \"; \"), \"\\\":\\\"\", \": \"), \"\\\":\", \": \"), \"\\\",\", \"; \"), \",\\\"\", \"; \"), \"\\\"\", \"\"), \"{\", \"\"), \"}\", \"\"),\n        RawValue contains \"://\", SafeValue,\n        replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(RawValue, \"*\", \"\\\\*\"), \"_\", \"\\\\_\"), \"~\", \"\\\\~\"), \"[\", \"\\\\[\"), \"]\", \"\\\\]\"), \"<\", \"&lt;\"), \">\", \"&gt;\"), \"|\", \"\\\\|\"))\n    | summarize ContentRows = make_list(strcat(\"| \", replace_string(ContentKey, \"_\", \" \"), \" | \", iff(strlen(CellValue) > 300, strcat(substring(CellValue, 0, 300), \"...\"), CellValue), \" |\")))\n| extend ContentMarkdown = iff(array_length(ContentRows) == 0, \"\", strcat(substring(strcat(\"Content:\\n\\n| Field | Value |\\n|---|---|\\n\", strcat_array(ContentRows, \"\\n\")), 0, 2600), \"\\n\\n\"))\n| mv-apply DetailWord = split(replace_string(replace_string(replace_string(replace_string(replace_string(substring(AlarmText, 0, 1500), \"\\r\", \"\"), \"\\n\", \" \"), \"`\", \"''\"), \"<\", \" <\"), \">\", \"> \"), \" \") to typeof(string) on (\n    summarize DetailWords = make_list(iff(DetailWord contains \"://\", DetailWord, replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(DetailWord, \"*\", \"\\\\*\"), \"_\", \"\\\\_\"), \"~\", \"\\\\~\"), \"[\", \"\\\\[\"), \"]\", \"\\\\]\"), \"<\", \"&lt;\"), \">\", \"&gt;\"), \"|\", \"\\\\|\"))))\n| extend DetailsMarkdown = trim(@\"\\s\", strcat_array(DetailWords, \" \"))\n| extend DetailsMarkdown = strcat(substring(DetailsMarkdown, 0, 1500), iff(strlen(AlarmText) > 1500 or strlen(DetailsMarkdown) > 1500, \"...\", \"\"))\n| extend DescriptionBody = strcat(\"SOCRadar Alarm\\n\\nAlarm ID: \", AlarmId, \"\\n\\nMain Type: \", coalesce(AlarmMainType, \"N/A\"), \"\\n\\nSub Type: \", coalesce(AlarmSubType, \"N/A\"), \"\\n\\nSeverity: \", Severity, \"\\n\\nStatus: \", Status, \"\\n\\nCreated: \", AlarmDate, \"\\n\\nDetails:\\n\", coalesce(DetailsMarkdown, \"No details\"), \"\\n\\n\", ContentMarkdown, \"\\n\\nSOCRadar severity: \", toupper(Severity))\n| extend DescriptionLink = strcat(\"View in SOCRadar: \", AlarmUrl)\n| extend BodyBytes = strlen(base64_encode_tostring(DescriptionBody)) * 3 / 4, BodyBudget = 4800 - 2 * strlen(DescriptionLink)\n| extend AlarmDescription = strcat(iff(BodyBytes > BodyBudget, strcat(substring(DescriptionBody, 0, toint(strlen(DescriptionBody) * 1.0 * BodyBudget / BodyBytes) - 10), \"...\\n\\n\"), DescriptionBody), DescriptionLink)\n| extend AlarmDescription = iff(strlen(base64_encode_tostring(AlarmDescription)) * 3 / 4 > 4900, strcat(substring(DescriptionBody, 0, 1000), \"...\\n\\n\", DescriptionLink), AlarmDescription)\n| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText, AlarmDescription, AlarmMainType, AlarmSubType, Severity, Status, AlarmDate, AlarmUrl, SentinelSeverity, IoCIp1, IoCIp2, IoCIp3, IoCDomain1, IoCDomain2, IoCDomain3, IoCUrl1, IoCUrl2, IoCUrl3\n| order by TimeGenerated asc\n| take 149",
                                 "queryFrequency": "PT5M",
                                 "queryPeriod": "PT30M",
                                 "triggerOperator": "GreaterThan",
@@ -2730,6 +2790,87 @@
                                                 "columnName": "AlarmUrl"
                                             }
                                         ]
+                                    },
+                                    {
+                                        "entityType": "IP",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Address",
+                                                "columnName": "IoCIp1"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "IP",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Address",
+                                                "columnName": "IoCIp2"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "IP",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Address",
+                                                "columnName": "IoCIp3"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "DNS",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "DomainName",
+                                                "columnName": "IoCDomain1"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "DNS",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "DomainName",
+                                                "columnName": "IoCDomain2"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "DNS",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "DomainName",
+                                                "columnName": "IoCDomain3"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "URL",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Url",
+                                                "columnName": "IoCUrl1"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "URL",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Url",
+                                                "columnName": "IoCUrl2"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "entityType": "URL",
+                                        "fieldMappings": [
+                                            {
+                                                "identifier": "Url",
+                                                "columnName": "IoCUrl3"
+                                            }
+                                        ]
                                     }
                                 ],
                                 "incidentConfiguration": {
@@ -2739,11 +2880,11 @@
                                         "reopenClosedIncident": false,
                                         "lookbackDuration": "P7D",
                                         "matchingMethod": "Selected",
-                                        "groupByEntities": [
-                                            "URL"
-                                        ],
+                                        "groupByEntities": [],
                                         "groupByAlertDetails": [],
-                                        "groupByCustomDetails": []
+                                        "groupByCustomDetails": [
+                                            "AlarmId"
+                                        ]
                                     }
                                 }
                             }
