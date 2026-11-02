@@ -30,7 +30,7 @@ DEDUP = "arg_max(TimeGenerated"
 # path -> {line number: why this query does not need dedup}
 EXEMPT = {
     "socradar-kql-queries.kql": {
-        68: "leftanti join: duplicate right-hand rows add nothing, and collapsing first "
+        71: "leftanti join: duplicate right-hand rows add nothing, and collapsing first "
             "would drop incidents whose newest version predates the 24h window",
     },
 }

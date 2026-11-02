@@ -49,6 +49,9 @@ SOCRadar_Alarms_CL
         | extend AlarmIdFromAlert = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])
     ) on $left.AlertGuid == $right.SystemAlertId
     | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
+    // Drop the SecurityAlert columns the inner join brought in, or the outer join
+    // renames the incident Status to Status2 and Status1 becomes the alert status.
+    | project AlarmId, Title, Status, IncidentNumber, CreatedTime
 ) on $left.AlarmId == $right.AlarmId
 | project
     AlarmId,
@@ -195,6 +198,8 @@ SOCRadar_Alarms_CL
         | extend AlarmIdFromAlert = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])
     ) on $left.AlertGuid == $right.SystemAlertId
     | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
+    // Same reason as the incident correlation query above: keep Status1 the incident status.
+    | project AlarmId, Status
 ) on AlarmId
 | where isempty(Status1) or Status1 != "Closed"
 | project
