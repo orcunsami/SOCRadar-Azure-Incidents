@@ -381,8 +381,8 @@ What is different in `AlertBacked`:
   over the following runs instead of landing in one rule run. The reason is a documented
   platform limit: a rule run with more than 50 customised values drops every customised title
   and severity for that run (a 58-row run kept them in our test, so read the cap as a guard,
-  not as the edge). The rule keeps a 10-minute ingestion window, so the cap keeps a run under
-  that. A run that still exceeds the limit gets the rule's default name and Medium severity;
+  not as the edge). The rule runs every 10 minutes over rows that are at least 12 minutes old, so the cap keeps
+  the rows that become eligible in one run under that. A run that still exceeds the limit gets the rule's default name and Medium severity;
   the alarm id is on the incident's URL entity either way, which is what Sync uses.
 - Each alarm is written once and the incident is Microsoft Sentinel's to create. If the platform
   skips a rule run (seen once on a fresh test workspace, for about 25 minutes: alerts written, no
@@ -391,14 +391,14 @@ What is different in `AlertBacked`:
 - Incident title `[SOCRadar] #<id> - <title>`; severity mapped as in Direct mode (CRITICAL/HIGH ->
   High, MEDIUM -> Medium, everything else -> Low); label `SOCRadar` only. The description is a
   report of plain "Field: value" lines (alarm id/type/severity/status/date, the alarm text, and
-  one line per field the alarm carries -- compromised IPs/domains, malware family/path, asset,
-  tags), budgeted to stay inside the alert description's byte limit; it has no table and no markdown escaping
+  a Content block of up to 5 "Field: value" lines of at most 160 characters -- suspicious
+  domain, compromised IPs/domains, malware family/path, asset, tags), budgeted to stay inside the alert description's byte limit; it has no table and no markdown escaping
   because the Defender portal shows the description as raw text. It ends with a `SOCRadar severity: <LEVEL>`
   line, then the link to the alarm. These incidents carry no `SOCRadar-Severity-*` label, so Sync
   reads the level from that line and severity write-back behaves as in Direct mode; editing the
   line away only switches the write-back off for that incident.
-- The import extracts the first IPv4, domain and URL indicator from the alarm text (the same
-  regex technique Direct mode uses for its bookmark enrichment) and writes them to the row. The
+- The import extracts the first IPv4, domain and URL indicator from the alarm text and content
+  (the same regex technique Direct mode uses for its bookmark enrichment) and writes them to the row. The
   rule maps the IP and the URL from them (a SOCRadar platform link is dropped, it is not an
   indicator). The domain is different: the first regex domain is alphabetical and on lookalike
   alarms it is often a name server, so the DNS entity is the phishing domain instead
@@ -423,9 +423,10 @@ What is different in `AlertBacked`:
   about 20 minutes after the import (the 12 to 25 minute range is an estimate), not 3 to 11. An
   alarm stays eligible for a day after it is written; if the rule does not run for longer than
   that, the alarm never gets an alert.
-- Upgrading an `AlertBacked` install from an older version: the alert groups by the `AlarmId`
-  custom detail, so an alarm whose row lands in the 10 minutes around the redeploy can get a
-  second incident once. Close it; Sync handles both.
+- Upgrading an `AlertBacked` install from an older version: the rule is updated in place and
+  skips alarms whose earlier alert carries the `AlarmId` custom detail. An alarm the old rule
+  alerted moments before the redeploy may still be alerted once more, and if its first incident
+  was already closed that opens a second one. Not measured; close it, Sync handles both.
 - Measured on a workspace connected to Microsoft Defender XDR: the incident kept the
   `[SOCRadar] #<id>` title and the description, so Sync found the alarm and the severity line.
   Defender can rename an incident when its correlation merges alerts; then Sync falls back to the
