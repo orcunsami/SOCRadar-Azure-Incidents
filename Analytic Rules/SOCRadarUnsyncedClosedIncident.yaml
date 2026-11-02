@@ -29,7 +29,10 @@ query: |
     | join kind=leftouter (
         SecurityAlert
         | summarize arg_max(TimeGenerated, *) by SystemAlertId
-        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+        // Custom details land in ExtendedProperties['Custom Details'] as a second,
+        // still-encoded JSON string (not a nested object), and each value is a
+        // 1-element array (live-measured, 2 Nov 2026).
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])
     ) on $left.AlertGuid == $right.SystemAlertId
     | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
     | extend AccountName = AlarmId

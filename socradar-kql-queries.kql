@@ -44,7 +44,9 @@ SOCRadar_Alarms_CL
     | join kind=leftouter (
         SecurityAlert
         | summarize arg_max(TimeGenerated, *) by SystemAlertId
-        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+        // Custom details land in ExtendedProperties['Custom Details'] as a second,
+        // still-encoded JSON string, values are 1-element arrays (live-measured, 2 Nov 2026).
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])
     ) on $left.AlertGuid == $right.SystemAlertId
     | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
 ) on $left.AlarmId == $right.AlarmId
@@ -71,7 +73,9 @@ SOCRadar_Alarms_CL
     | join kind=leftouter (
         SecurityAlert
         | summarize arg_max(TimeGenerated, *) by SystemAlertId
-        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+        // Custom details land in ExtendedProperties['Custom Details'] as a second,
+        // still-encoded JSON string, values are 1-element arrays (live-measured, 2 Nov 2026).
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])
     ) on $left.AlertGuid == $right.SystemAlertId
     | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
 ) on AlarmId
@@ -186,7 +190,9 @@ SOCRadar_Alarms_CL
     | join kind=leftouter (
         SecurityAlert
         | summarize arg_max(TimeGenerated, *) by SystemAlertId
-        | extend AlarmIdFromAlert = tostring(parse_json(tostring(ExtendedProperties)).AlarmId)
+        // Custom details land in ExtendedProperties['Custom Details'] as a second,
+        // still-encoded JSON string, values are 1-element arrays (live-measured, 2 Nov 2026).
+        | extend AlarmIdFromAlert = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])
     ) on $left.AlertGuid == $right.SystemAlertId
     | extend AlarmId = coalesce(AlarmId, AlarmIdFromAlert)
 ) on AlarmId
