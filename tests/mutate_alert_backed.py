@@ -252,6 +252,12 @@ def m_monitored_asset_dropped(t):
     r["properties"]["customDetails"].pop("MonitoredAsset", None)
 
 
+def m_domain_from_payload_only(t):
+    r, _ = rule(t)
+    q = r["properties"]["query"]
+    r["properties"]["query"] = q.replace('extract(@"Phishing Domain:\\s*(\\S+)", 1, AlarmText)', '""')
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -284,6 +290,7 @@ MUTATIONS = [
     ("description escapes markdown again", (ROOT, IMPORT), m_description_html_escape),
     ("DNS entity is the regex-found domain again", (ROOT, IMPORT), m_dns_from_regex_domain),
     ("Content block lists every field", (ROOT, IMPORT), m_content_uncapped),
+    ("domain no longer read from the alarm text", (ROOT, IMPORT), m_domain_from_payload_only),
     ("phishing domain not ingested", (ROOT,), m_phishing_domain_not_ingested),
     ("monitored asset dropped from custom details", (ROOT, IMPORT), m_monitored_asset_dropped),
     ("rule runs every 5 minutes again", (ROOT, IMPORT), m_five_minute_runs),

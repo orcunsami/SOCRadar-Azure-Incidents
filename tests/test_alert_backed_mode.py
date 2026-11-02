@@ -289,9 +289,11 @@ if root_nested:
               "the regex-found domain and the monitored asset must not be entities")
         check(details.get("SuspiciousDomain") == "SuspiciousDomain" and details.get("MonitoredAsset") == "MonitoredAsset",
               "SuspiciousDomain and MonitoredAsset must be custom details so an automation rule can branch on them")
-        check("SuspiciousDomain = tolower(tostring(AlarmPayload['phishing_domain']))" in query
+        check('extract(@"Phishing Domain:\\s*(\\S+)", 1, AlarmText)' in query
+              and "tostring(AlarmPayload['phishing_domain'])" in query and "SuspiciousDomain = tolower(" in query
               and "MonitoredAsset = tostring(AlarmPayload['alarm_asset'])" in query,
-              "SuspiciousDomain must come from content.phishing_domain and MonitoredAsset from alarm_asset")
+              "SuspiciousDomain must come from the 'Phishing Domain:' line of the alarm text (payload key as fallback) "
+              "and MonitoredAsset from alarm_asset")
         check('IoCUrl1 = iff(IoCUrl1 has "socradar.com", "", IoCUrl1)' in query,
               "a SOCRadar platform link must not become an IoC URL entity")
         check("array_slice(ContentRows, 0, 5)" in query,
