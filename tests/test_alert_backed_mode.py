@@ -275,13 +275,35 @@ if root_nested:
         check(mappings and mappings[0] == {"entityType": "URL", "fieldMappings": [{"identifier": "Url", "columnName": "AlarmUrl"}]},
               "AlarmUrl must still be the first URL entity mapping")
         check(len(mappings) == 4, f"entityMappings must total 4 (real platform cap is 5, measured via live deploy): found {len(mappings)}")
-        ioc_cols = {"IoCIp1": "Address", "IoCDomain1": "DomainName", "IoCUrl1": "Url"}
+        # The DNS entity is the phishing domain the alarm names (content.phishing_domain), not the
+        # first domain the import regex finds in the text: on a lookalike-domain alarm that was a
+        # registrar name server, and on others it can be the customer's own domain. The monitored
+        # asset (the customer's own brand) is a custom detail and never an entity.
+        ioc_cols = {"IoCIp1": ("IP", "Address"), "SuspiciousDomain": ("DNS", "DomainName"), "IoCUrl1": ("URL", "Url")}
         by_col = {m["fieldMappings"][0]["columnName"]: (m["entityType"], m["fieldMappings"][0]["identifier"])
                   for m in mappings[1:]}
-        for col, identifier in ioc_cols.items():
-            expected_type = "IP" if col.startswith("IoCIp") else ("DNS" if col.startswith("IoCDomain") else "URL")
-            check(by_col.get(col) == (expected_type, identifier),
-                  f"entityMappings must map {col} as a single-identifier {expected_type} entity")
+        for col, expected in ioc_cols.items():
+            check(by_col.get(col) == expected,
+                  f"entityMappings must map {col} as a single-identifier {expected[0]} entity")
+        check("IoCDomain1" not in by_col and "MonitoredAsset" not in by_col,
+              "the regex-found domain and the monitored asset must not be entities")
+        check(details.get("SuspiciousDomain") == "SuspiciousDomain" and details.get("MonitoredAsset") == "MonitoredAsset",
+              "SuspiciousDomain and MonitoredAsset must be custom details so an automation rule can branch on them")
+        check("SuspiciousDomain = tolower(tostring(AlarmPayload['phishing_domain']))" in query
+              and "MonitoredAsset = tostring(AlarmPayload['alarm_asset'])" in query,
+              "SuspiciousDomain must come from content.phishing_domain and MonitoredAsset from alarm_asset")
+        check('IoCUrl1 = iff(IoCUrl1 has "socradar.com", "", IoCUrl1)' in query,
+              "a SOCRadar platform link must not become an IoC URL entity")
+        check("array_slice(ContentRows, 0, 5)" in query,
+              "the Content block must stop at the first 5 fields, not list every field the alarm carries")
+        infra_text = open(os.path.join(REPO, "Playbooks", "SOCRadar-Alarms-Infrastructure", "azuredeploy.json")).read()
+        check("'phishing_domain', AlarmPayload['content']['phishing_domain']" in infra_text,
+              "infrastructure template: the alarms DCR transform must keep content.phishing_domain")
+        for dcr_owner, label in ((root, "root template"),):
+            for r in dcr_owner["resources"]:
+                if r["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in r["name"]:
+                    kql = json.dumps(r["properties"]["dataFlows"])
+                    check("phishing_domain" in kql, f"{label}: the alarms DCR transform must keep content.phishing_domain, or the rule has nothing to read")
         check('strcat("https://platform.socradar.com/app/company/", CompanyId, '
               '"/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)' in query,
               "AlarmUrl must open the alarm in the platform (field=alarmId ... value=<id>), the shape Sync parses")
@@ -306,7 +328,7 @@ if root_nested:
         declared = set()
         for stream in dcr["properties"]["streamDeclarations"].values():
             declared |= {c["name"] for c in stream["columns"]}
-        derived = {"AlarmUrl", "SentinelSeverity", "AlarmDescription"}
+        derived = {"AlarmUrl", "SentinelSeverity", "AlarmDescription", "SuspiciousDomain", "MonitoredAsset"}
         missing = columns - declared - derived
         check(not missing, f"rule query projects columns the alarms table does not have: {sorted(missing)}")
         check(set(details.values()) <= columns, "every custom detail must be a projected column")

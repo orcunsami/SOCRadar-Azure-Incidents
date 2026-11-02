@@ -189,7 +189,7 @@ def m_ioc_column_wrong_index(t):
 def m_description_pipe_table(t):
     r, _ = rule(t)
     q = r["properties"]["query"]
-    r["properties"]["query"] = q.replace('strcat("Content:\\n\\n", strcat_array(ContentRows, "\\n\\n"))',
+    r["properties"]["query"] = q.replace('strcat("Content:\\n\\n", strcat_array(array_slice(ContentRows, 0, 5), "\\n\\n"))',
                                          'strcat("Content:\\n\\n| Field | Value |\\n|---|---|\\n", strcat_array(ContentRows, "\\n"))')
 
 
@@ -227,6 +227,31 @@ def m_description_html_escape(t):
                                          '| extend DetailsMarkdown = trim(@"\\s", replace_string(replace_string(replace_string(replace_string(substring(AlarmText, 0, 1500), "\\r", ""), "\\n", " "), "<", "&lt;"), "*", "\\\\*"))')
 
 
+def m_dns_from_regex_domain(t):
+    r, _ = rule(t)
+    for mapping in r["properties"]["entityMappings"]:
+        for fm in mapping["fieldMappings"]:
+            if fm["columnName"] == "SuspiciousDomain":
+                fm["columnName"] = "IoCDomain1"
+
+
+def m_content_uncapped(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("array_slice(ContentRows, 0, 5)", "ContentRows")
+
+
+def m_phishing_domain_not_ingested(t):
+    for res in t["resources"]:
+        if res["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in res["name"]:
+            for flow in res["properties"]["dataFlows"]:
+                flow["transformKql"] = flow["transformKql"].replace(", 'phishing_domain', AlarmPayload['content']['phishing_domain']", "")
+
+
+def m_monitored_asset_dropped(t):
+    r, _ = rule(t)
+    r["properties"]["customDetails"].pop("MonitoredAsset", None)
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -257,6 +282,10 @@ MUTATIONS = [
     ("rule alerts an alarm twice", (ROOT, IMPORT), m_no_alert_dedup),
     ("rows are not held back before alerting", (ROOT, IMPORT), m_no_holdback),
     ("description escapes markdown again", (ROOT, IMPORT), m_description_html_escape),
+    ("DNS entity is the regex-found domain again", (ROOT, IMPORT), m_dns_from_regex_domain),
+    ("Content block lists every field", (ROOT, IMPORT), m_content_uncapped),
+    ("phishing domain not ingested", (ROOT,), m_phishing_domain_not_ingested),
+    ("monitored asset dropped from custom details", (ROOT, IMPORT), m_monitored_asset_dropped),
     ("rule runs every 5 minutes again", (ROOT, IMPORT), m_five_minute_runs),
     ("alerted-AlarmId read uses the flat shape", (ROOT, IMPORT), m_dedup_flat_custom_details),
     ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
