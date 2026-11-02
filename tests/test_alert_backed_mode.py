@@ -232,6 +232,13 @@ if root_nested:
               "content must be plain 'Field: value' lines, not a pipe table (Defender does not render markdown)")
         check('strcat("\\n\\nView in SOCRadar: ", AlarmUrl)' in query,
               "the SOCRadar link must start after a blank line, not glue onto the severity marker")
+        # Defender shows the description as raw text, so markdown escapes would be read literally
+        # ("\\_admin\\_", "&lt;", "\\|"). The alert description is plain text on purpose.
+        check("&lt;" not in query and "&gt;" not in query and "SafeValue" not in query,
+              "description must not HTML-escape: Defender shows the text raw")
+        check(not any(f'"{c}", "\\\\{c}"' in query for c in "*_~[]|"),
+              "description must not backslash-escape markdown characters: Defender shows them raw")
+        check('"`", "\'\'"' not in query, "description must not rewrite backticks: it is not markdown")
         # One alert per alarm. Two overlapping runs see every row and the platform can delay a run
         # (measured: 5 alerts per alarm, and a new incident 85 s after an analyst closed the first),
         # so rows whose AlarmId already has a SecurityAlert are dropped before they can alert again.

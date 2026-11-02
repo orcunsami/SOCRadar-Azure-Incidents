@@ -392,8 +392,8 @@ What is different in `AlertBacked`:
   High, MEDIUM -> Medium, everything else -> Low); label `SOCRadar` only. The description is a
   report of plain "Field: value" lines (alarm id/type/severity/status/date, the alarm text, and
   one line per field the alarm carries -- compromised IPs/domains, malware family/path, asset,
-  tags), budgeted to stay inside the alert description's byte limit; it has no table because the
-  Defender portal shows the description as raw text. It ends with a `SOCRadar severity: <LEVEL>`
+  tags), budgeted to stay inside the alert description's byte limit; it has no table and no markdown escaping
+  because the Defender portal shows the description as raw text. It ends with a `SOCRadar severity: <LEVEL>`
   line, then the link to the alarm. These incidents carry no `SOCRadar-Severity-*` label, so Sync
   reads the level from that line and severity write-back behaves as in Direct mode; editing the
   line away only switches the write-back off for that incident.

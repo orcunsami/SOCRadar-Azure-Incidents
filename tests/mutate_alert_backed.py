@@ -220,6 +220,13 @@ def m_five_minute_runs(t):
     r["properties"]["queryFrequency"] = "PT5M"
 
 
+def m_description_html_escape(t):
+    r, _ = rule(t)
+    q = r["properties"]["query"]
+    r["properties"]["query"] = q.replace('| extend DetailsMarkdown = trim(@"\\s", replace_string(replace_string(substring(AlarmText, 0, 1500), "\\r", ""), "\\n", " "))',
+                                         '| extend DetailsMarkdown = trim(@"\\s", replace_string(replace_string(replace_string(replace_string(substring(AlarmText, 0, 1500), "\\r", ""), "\\n", " "), "<", "&lt;"), "*", "\\\\*"))')
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -249,6 +256,7 @@ MUTATIONS = [
     ("link glued to severity line", (ROOT, IMPORT), m_description_link_glued),
     ("rule alerts an alarm twice", (ROOT, IMPORT), m_no_alert_dedup),
     ("rows are not held back before alerting", (ROOT, IMPORT), m_no_holdback),
+    ("description escapes markdown again", (ROOT, IMPORT), m_description_html_escape),
     ("rule runs every 5 minutes again", (ROOT, IMPORT), m_five_minute_runs),
     ("alerted-AlarmId read uses the flat shape", (ROOT, IMPORT), m_dedup_flat_custom_details),
     ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
