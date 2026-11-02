@@ -364,7 +364,7 @@ incident per alarm through the Microsoft Sentinel API. Those incidents never app
 Microsoft Defender portal's unified queue, which only lists incidents backed by an alert.
 
 **`AlertBacked`** makes the import write each alarm to `SOCRadar_Alarms_CL` and nothing else. A
-scheduled analytics rule (`SOCRadar alarm`, every 5 minutes, deployed with this mode) raises one
+scheduled analytics rule (`SOCRadar alarm`, every 10 minutes, deployed with this mode) raises one
 alert per row, and Microsoft Sentinel -- or Microsoft Defender XDR, when the workspace is
 onboarded to it -- creates the incident. An automation rule adds the `SOCRadar` label so Sync
 finds them.
@@ -384,7 +384,6 @@ What is different in `AlertBacked`:
   not as the edge). The rule keeps a 10-minute ingestion window, so the cap keeps a run under
   that. A run that still exceeds the limit gets the rule's default name and Medium severity;
   the alarm id is on the incident's URL entity either way, which is what Sync uses.
-- The rule skips alarms that already have an alert (it reads `SecurityAlert` for the `AlarmId` custom detail), so overlapping runs and delayed runs raise one alert per alarm; without that, closing an incident could be followed by a second incident for the same alarm.
 - Each alarm is written once and the incident is Microsoft Sentinel's to create. If the platform
   skips a rule run (seen once on a fresh test workspace, for about 25 minutes: alerts written, no
   incidents), those alarms are not re-alerted and never get an incident. `Direct` has no such
@@ -409,10 +408,12 @@ What is different in `AlertBacked`:
   through the rule itself and needs no such elevation, only one extra Log Analytics query per
   alarm. Incident grouping keys off the `AlarmId` custom detail rather than an entity, so two
   different alarms that happen to share an IoC indicator do not merge into one incident.
-- Every alarm row is seen by two consecutive rule runs: the 10-minute window overlaps the
-  5-minute interval on purpose, because a late run must not skip rows and a skipped row is never
-  retried. The second alert joins the same incident, so an incident normally shows 2 alerts. An
-  incident closed inside those 10 minutes comes back once as a new incident; close it again.
+- One alert per alarm. The platform runs a rule's query about 6 minutes behind the clock, so the
+  rule runs every 10 minutes, only considers a row once it is 12 minutes old, and drops alarms
+  that already have an alert (it reads `SecurityAlert` for the `AlarmId` custom detail). A closed
+  incident is therefore not followed by a second one for the same alarm. The cost is delay: an
+  incident shows up about 12 to 25 minutes after the import, not 3 to 11. Rows are never dropped:
+  an alarm stays eligible for a day until it has an alert.
 - Upgrading an `AlertBacked` install from an older version: the alert groups by the `AlarmId`
   custom detail, so an alarm whose row lands in the 10 minutes around the redeploy can get a
   second incident once. Close it; Sync handles both.

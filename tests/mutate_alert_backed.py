@@ -51,7 +51,7 @@ def rule(template):
 
 def m_timegenerated_window(t):
     r, _ = rule(t)
-    r["properties"]["query"] = r["properties"]["query"].replace("ingestion_time() > ago(10m)", "TimeGenerated > ago(10m)")
+    r["properties"]["query"] = r["properties"]["query"].replace("ingestion_time() > ago(1d)", "TimeGenerated > ago(1d)")
 
 
 def m_closed_alarms_alert(t):
@@ -210,6 +210,16 @@ def m_dedup_flat_custom_details(t):
         "tostring(parse_json(tostring(ExtendedProperties)).AlarmId)")
 
 
+def m_no_holdback(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("| where ingestion_time() < ago(12m)\n", "")
+
+
+def m_five_minute_runs(t):
+    r, _ = rule(t)
+    r["properties"]["queryFrequency"] = "PT5M"
+
+
 MUTATIONS = [
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -238,6 +248,8 @@ MUTATIONS = [
     ("description goes back to a pipe table", (ROOT, IMPORT), m_description_pipe_table),
     ("link glued to severity line", (ROOT, IMPORT), m_description_link_glued),
     ("rule alerts an alarm twice", (ROOT, IMPORT), m_no_alert_dedup),
+    ("rows are not held back before alerting", (ROOT, IMPORT), m_no_holdback),
+    ("rule runs every 5 minutes again", (ROOT, IMPORT), m_five_minute_runs),
     ("alerted-AlarmId read uses the flat shape", (ROOT, IMPORT), m_dedup_flat_custom_details),
     ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
 ]

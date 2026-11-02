@@ -177,12 +177,15 @@ if root_nested:
         query = props["query"]
         check(rule.get("kind") == "Scheduled", "rule kind must be Scheduled")
         check(props.get("enabled") is True, "rule must be enabled")
-        check(props.get("queryFrequency") == "PT5M", "rule must run every 5 minutes (platform minimum)")
-        check(props.get("queryPeriod") == "PT30M",
-              "rule period must be PT30M: TimeGenerated is the ingest call time and a new table's "
-              "first ingestion can lag 15 minutes (EXP-AZURE-0177)")
-        check("ingestion_time() > ago(10m)" in query,
-              "rule query must window on ingestion_time(), not TimeGenerated (ingestion-delay guidance)")
+        check(props.get("queryFrequency") == "PT10M",
+              "rule must run every 10 minutes: the platform runs a query ~6 min behind the clock, so a shorter "
+              "interval hides the previous alert from the next run and every alarm alerts twice (measured)")
+        check(props.get("queryPeriod") == "P1D",
+              "rule period must be P1D: the SecurityAlert read that drops already-alerted alarms and the "
+              "backlog both need the day, and TimeGenerated is the ingest call time (EXP-AZURE-0177)")
+        check("ingestion_time() > ago(1d)" in query and "ingestion_time() < ago(12m)" in query,
+              "rule query must window on ingestion_time(), not TimeGenerated, and hold rows back 12 minutes "
+              "so the previous run's alert is visible before the row is considered again")
         check(not re.search(r"TimeGenerated\s*[<>]=?\s*ago\(", query),
               "rule query must not filter TimeGenerated with ago(): the engine injects that window")
         check('toupper(Status) == "OPEN"' in query,
