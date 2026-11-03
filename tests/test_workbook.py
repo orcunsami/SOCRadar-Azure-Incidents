@@ -76,6 +76,17 @@ for path in FILES:
               f"{path}: the alert to alarm join must read the double-encoded Custom Details shape measured live")
         check("mv-expand AlertId = AlertIds" in q and "$left.SystemAlertId == $right.AlertId" in q,
               f"{path}: the incident join must go through AlertIds")
+        # Both stand-ins feed 'summarize arg_max(TimeGenerated, *)': without the column the panel is an
+        # error (not an empty list) in a workspace that has no SecurityAlert / SecurityIncident table.
+        for m in re.finditer(r"datatable\(([^)]*)\)\[\]\)", q):
+            check("TimeGenerated:datetime" in m.group(1),
+                  f"{path}: the stand-in datatable({m.group(1)[:40]}...) needs TimeGenerated:datetime")
+        # A join fans out when an alarm has several alerts or an incident several alerts: the panel
+        # promises one row per alarm and incident, so it must end in a distinct over its columns.
+        check(re.search(r"\| project AlarmId, [^\n]*\n\| distinct AlarmId, [^\n]*IncidentNumber[^\n]*\n\| order by", q) is not None,
+              f"{path}: the alarm and incident panel must be deduplicated after the joins")
+        check("one row per alarm and incident" in items["incident-header"]["content"]["json"].lower(),
+              f"{path}: the panel header must say what a row is")
     if "sync-status" in items:
         q = items["sync-status"]["content"]["query"]
         check('has "SOCRadar"' in q and 'has "Synced"' in q and "IncidentNumber:int" in q,
