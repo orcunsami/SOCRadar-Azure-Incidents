@@ -383,8 +383,9 @@ from scratch.
 `IncidentMode` decides who creates the incident. The default is `AlertBacked`.
 
 **`Direct`** is what the sections above describe: the import Logic App creates one incident per
-alarm through the Microsoft Sentinel API. Those incidents never appear in the Microsoft Defender
-portal's unified queue, which only lists incidents backed by an alert.
+alarm through the Microsoft Sentinel API. Those incidents do not appear in the Microsoft Defender
+portal's unified queue, which only lists incidents backed by an alert (per Microsoft documentation; measured on
+this product only for `AlertBacked`).
 
 **`AlertBacked`** (default) makes the import write each alarm to `SOCRadar_Alarms_CL` and nothing else. A
 set of five scheduled analytics rules (every 10 minutes, deployed with this mode) raises one
@@ -449,7 +450,8 @@ The credential rule never copies the exposed credential (user name, URL, passwor
 Microsoft ends the Microsoft Sentinel experience in the Azure portal on 31 March 2027; after
 that date workspaces are managed only in the Microsoft Defender portal. A workspace opened in
 the Defender portal lists incidents backed by an alert. Incidents created through the API or by a
-Logic App are not synced to it, and after that date they have no portal to be seen in.
+Logic App are not synced to it (per Microsoft documentation; measured on this product only for `AlertBacked`),
+and after that date they have no portal to be seen in.
 
 | | `AlertBacked` | `Direct` |
 |---|---|---|

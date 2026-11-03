@@ -110,6 +110,12 @@ jobs:
       - name: The daily rescan test actually fails when the rescan is broken
         run: python3 tests/mutate_daily_rescan.py
 
+      - name: The first-run window is bounded to the 7 days the import reads
+        run: python3 tests/test_lookback_bounds.py
+
+      - name: The bounds test actually fails when a bound moves
+        run: python3 tests/mutate_lookback_bounds.py
+
       - name: Shipped queries do what the README says
         run: python3 tests/test_query_logic.py
 
