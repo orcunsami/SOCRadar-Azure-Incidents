@@ -154,8 +154,8 @@ Microsoft Sentinel was not found on the workspace '<name>'
 This used to succeed. The deployment went green and the integration was dead, because a
 workspace can carry the Microsoft Sentinel solution and still have no onboarding state.
 
-The same step rejects `IncidentMode=AlertBacked` cross-RG, during template validation, before
-anything is created:
+`AlertBacked` is the default, so a cross-RG deployment has to set `IncidentMode=Direct`. Without
+it, the same step rejects the deployment during template validation, before anything is created:
 
 ```
 The provided value for the template parameter 'IncidentMode' is not valid.
@@ -178,7 +178,7 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 | `PollingIntervalMinutes` | `5` | How often to check for alarms (1-60). Also sets the floor of the import window |
 | `InitialLookbackMinutes` | `600` | Lookback window when there is no checkpoint yet (10 hours) |
 | `ImportAllStatuses` | `false` | `true` imports RESOLVED / FALSE_POSITIVE / MITIGATED too, as already-closed incidents -- see [Importing closed alarms](#importing-closed-alarms) |
-| `IncidentMode` | `Direct` | `Direct` creates the incidents from the import Logic App. `AlertBacked` writes the alarms to `SOCRadar_Alarms_CL` and a scheduled analytics rule raises one alert and one incident per alarm, which is what makes them show up in the Microsoft Defender portal -- see [Incident mode](#incident-mode) |
+| `IncidentMode` | `AlertBacked` | `AlertBacked` writes the alarms to `SOCRadar_Alarms_CL` and a scheduled analytics rule raises one alert and one incident per alarm, which is what makes them show up in the Microsoft Defender portal. `Direct` creates the incidents from the import Logic App; they never reach the Defender portal, and it is the only value that works when the workspace is in another resource group -- see [Incident mode](#incident-mode) |
 | `SyncSeverity` | `true` | Push the Microsoft Sentinel severity back to SOCRadar on close. Raise-only, a severity is never lowered -- see [Severity write-back](#severity-write-back) |
 | `EnableIoCEnrichment` | `true` | Attach IP/domain/URL indicators from the alarm to the incident as entities (see [IoC Entity Enrichment](#ioc-entity-enrichment)) |
 | `EnableAuditLogging` | `true` | Writes audit events to `SOCRadarAuditLog_CL` |
@@ -187,6 +187,11 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 | `TableRetentionDays` | `365` | Retention for custom tables (30-730) |
 
 ## Existing installations
+
+**`IncidentMode` now defaults to `AlertBacked`.** Redeploying an install that ran `Direct` without
+setting the parameter switches it: the import window is read once more and every alarm in it gets
+a second, rule-created incident. To keep the previous behaviour, pass `IncidentMode=Direct`
+explicitly. See [Incident mode](#incident-mode).
 
 Deployments made before `DeployNewWorkspace` existed stated a pricing tier on the workspace
 resource, and a template overwrites every field it states. If the target workspace was on a
@@ -357,17 +362,37 @@ from scratch.
 
 ## Incident mode
 
-`IncidentMode` decides who creates the incident.
+`IncidentMode` decides who creates the incident. The default is `AlertBacked`.
 
-**`Direct`** (default) is what the sections above describe: the import Logic App creates one
-incident per alarm through the Microsoft Sentinel API. Those incidents never appear in the
-Microsoft Defender portal's unified queue, which only lists incidents backed by an alert.
+**`Direct`** is what the sections above describe: the import Logic App creates one incident per
+alarm through the Microsoft Sentinel API. Those incidents never appear in the Microsoft Defender
+portal's unified queue, which only lists incidents backed by an alert.
 
-**`AlertBacked`** makes the import write each alarm to `SOCRadar_Alarms_CL` and nothing else. A
+**`AlertBacked`** (default) makes the import write each alarm to `SOCRadar_Alarms_CL` and nothing else. A
 scheduled analytics rule (`SOCRadar alarm`, every 10 minutes, deployed with this mode) raises one
 alert per row, and Microsoft Sentinel -- or Microsoft Defender XDR, when the workspace is
 onboarded to it -- creates the incident. An automation rule adds the `SOCRadar` label so Sync
 finds them.
+
+### Microsoft Defender portal
+
+Microsoft ends the Microsoft Sentinel experience in the Azure portal on 31 March 2027; after
+that date workspaces are managed only in the Microsoft Defender portal. A workspace opened in
+the Defender portal lists incidents backed by an alert. Incidents created through the API or by a
+Logic App are not synced to it, and after that date they have no portal to be seen in.
+
+| | `AlertBacked` | `Direct` |
+|---|---|---|
+| Incident in the Defender queue | yes (provider shown as Microsoft XDR) | no |
+| Incident in the Azure portal | yes | yes, until 31 March 2027 |
+| Entities (alarm link, IP, phishing domain, URL) | on the alert, filled when the incident is created | bookmark based, Azure portal only |
+| Custom details (`AlarmId`, `AlarmMainType`, `AlarmSubType`, `SocradarSeverity`, `AlarmStatus`, `SuspiciousDomain`, `MonitoredAsset`) | on the alert, usable in automation rules | none |
+| Incident delay after the alarm is imported | about 20 minutes (the rule waits 12 minutes) | within the polling interval |
+| Description | plain text (Defender shows it raw) | markdown |
+
+Measured on a workspace connected to Defender: an incident closed in the Defender portal reached
+Sentinel in about 6 seconds, and Sync wrote the closure back to SOCRadar and put the `Synced`
+label on the incident. Defender may rename an incident when its correlation merges alerts.
 
 What is different in `AlertBacked`:
 

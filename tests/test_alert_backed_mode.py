@@ -110,7 +110,7 @@ for path, template in ((ROOT, root), (IMPORT, import_pb)):
     param = template["parameters"].get("IncidentMode")
     check(param is not None, f"{label}: no IncidentMode parameter")
     if param:
-        check(param.get("defaultValue") == "Direct", f"{label}: IncidentMode must default to Direct")
+        check(param.get("defaultValue") == "AlertBacked", f"{label}: IncidentMode must default to AlertBacked")
         check(param.get("allowedValues") == ["Direct", "AlertBacked"],
               f"{label}: IncidentMode allowedValues must be exactly Direct, AlertBacked")
     gate = template.get("variables", {}).get("alarmsTableEnabled", "")

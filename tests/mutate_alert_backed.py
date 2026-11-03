@@ -49,6 +49,10 @@ def rule(template):
         next(r for r in inner if r["type"].endswith("/automationRules"))
 
 
+def m_default_direct(t):
+    t["parameters"]["IncidentMode"]["defaultValue"] = "Direct"
+
+
 def m_timegenerated_window(t):
     r, _ = rule(t)
     r["properties"]["query"] = r["properties"]["query"].replace("ingestion_time() > ago(1d)", "TimeGenerated > ago(1d)")
@@ -269,6 +273,7 @@ def m_domain_regex_greedy(t):
 
 
 MUTATIONS = [
+    ("IncidentMode defaults to Direct again", (ROOT, IMPORT), m_default_direct),
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
     ("rule takes 150 rows", (ROOT, IMPORT), m_take_150),

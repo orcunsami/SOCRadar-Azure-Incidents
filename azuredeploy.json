@@ -75,13 +75,13 @@
         },
         "IncidentMode": {
             "type": "string",
-            "defaultValue": "Direct",
+            "defaultValue": "AlertBacked",
             "allowedValues": [
                 "Direct",
                 "AlertBacked"
             ],
             "metadata": {
-                "description": "Direct: the import Logic App creates one Microsoft Sentinel incident per SOCRadar alarm (current behaviour). AlertBacked: the import writes alarms to the SOCRadar_Alarms_CL table and a scheduled analytics rule raises one alert and one incident per alarm, so the incidents also appear in the Microsoft Defender portal. AlertBacked needs the workspace in this resource group; the alarms table is deployed with it."
+                "description": "AlertBacked (default): the import writes alarms to the SOCRadar_Alarms_CL table and a scheduled analytics rule raises one alert and one incident per alarm, so the incidents also appear in the Microsoft Defender portal. It needs the workspace in this resource group; the alarms table is deployed with it. Direct: the import Logic App creates one Microsoft Sentinel incident per SOCRadar alarm; these incidents are not synced to the Microsoft Defender portal. Use Direct when the workspace is in another resource group."
             }
         },
         "EnableAuditLogging": {
