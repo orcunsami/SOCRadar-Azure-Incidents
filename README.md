@@ -190,9 +190,13 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 ## Existing installations
 
 **`IncidentMode` now defaults to `AlertBacked`.** Redeploying an install that ran `Direct` without
-setting the parameter switches it: the import window is read once more and every alarm in it gets
-a second, rule-created incident. To keep the previous behaviour, pass `IncidentMode=Direct`
-explicitly. See [Incident mode](#incident-mode).
+setting the parameter switches it: the first import reads the window once more and every alarm in
+it gets a second, rule-created incident. That window starts at the last checkpoint (minus 15
+minutes, and never less than 60 minutes), so an install that has been polling normally re-reads
+only the last hour: in a measured upgrade in place, nothing was re-read and no extra incident
+appeared. Alarms older than the window keep their existing incident and get no second one. To
+keep the previous behaviour, pass `IncidentMode=Direct` explicitly. See
+[Incident mode](#incident-mode).
 
 Deployments made before `DeployNewWorkspace` existed stated a pricing tier on the workspace
 resource, and a template overwrites every field it states. If the target workspace was on a
@@ -525,9 +529,13 @@ What is different in `AlertBacked`:
 - `PollingIntervalMinutes` below 5 lowers the per-run cap (4 at 1 minute) rather than the
   rule interval, which cannot go below 5.
 
-Switching an existing install from `Direct` to `AlertBacked` re-ingests the current import
-window once, and every alarm in it gets a second, rule-created incident; close the old ones.
-Switching back does the same in reverse.
+Switching an existing install from `Direct` to `AlertBacked` re-ingests the alarms in the import
+window once (the window starts at the last checkpoint, at least 60 minutes back; the `alarm-<id>`
+rows that de-duplicate `AlertBacked` do not exist yet), and every alarm in it gets a second,
+rule-created incident; close the old ones. Measured with all five alarms re-read: one alert per
+alarm (the `Direct` install had already written its own row to `SOCRadar_Alarms_CL`; the rule
+still raised a single alert per alarm), and Sync closed both incidents of an alarm with one
+status write each, both accepted. Switching back does the same in reverse.
 
 ## Importing closed alarms
 
