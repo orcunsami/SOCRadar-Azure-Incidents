@@ -182,6 +182,7 @@ exist. Deploy into the workspace's own resource group to use alert-backed mode.
 | `SyncSeverity` | `true` | Push the Microsoft Sentinel severity back to SOCRadar on close. Raise-only, a severity is never lowered -- see [Severity write-back](#severity-write-back) |
 | `EnableIoCEnrichment` | `true` | Attach IP/domain/URL indicators from the alarm to the incident as entities (see [IoC Entity Enrichment](#ioc-entity-enrichment)) |
 | `EnableAuditLogging` | `true` | Writes audit events to `SOCRadarAuditLog_CL` |
+| `EnableCredentialRule` | `true` | `AlertBacked` only. `false` switches off the rule that raises an incident for every credential and botnet alarm; those alarms get no incident from any rule -- see [The five rules](#the-five-rules) |
 | `EnableAlarmsTable` | `true` | Stores alarm fields in `SOCRadar_Alarms_CL`. The workbook and four of the five hunting queries need it. Forced on by `IncidentMode=AlertBacked` |
 | `EnableWorkbook` | `true` | Deploys the SOCRadar Dashboard workbook. Needs `EnableAlarmsTable=true` -- with the table off, the workbook is skipped even when this is `true` |
 | `TableRetentionDays` | `365` | Retention for custom tables (30-730) |
@@ -369,10 +370,38 @@ alarm through the Microsoft Sentinel API. Those incidents never appear in the Mi
 portal's unified queue, which only lists incidents backed by an alert.
 
 **`AlertBacked`** (default) makes the import write each alarm to `SOCRadar_Alarms_CL` and nothing else. A
-scheduled analytics rule (`SOCRadar alarm`, every 10 minutes, deployed with this mode) raises one
+set of five scheduled analytics rules (every 10 minutes, deployed with this mode) raises one
 alert per row, and Microsoft Sentinel -- or Microsoft Defender XDR, when the workspace is
 onboarded to it -- creates the incident. An automation rule adds the `SOCRadar` label so Sync
 finds them.
+
+### The five rules
+
+Each alarm goes to exactly one rule, chosen by its SOCRadar type (main type and sub type
+together; the same sub type exists under two main types). Every rule has its own entities and
+custom details, so an analyst or an automation rule can act on what matters for that kind of
+alarm.
+
+| Rule | Takes | Entities (after the alarm link) | Custom details (next to the shared set) | MITRE |
+|---|---|---|---|---|
+| `SOCRadar - Lookalike and phishing domain` | Impersonating Domain, Phishing Domain state changes | phishing domain (DNS), its IP | `SuspiciousDomain`, `SuspiciousIp`, `PhishingScore`, `PhishingKeyword` | ResourceDevelopment, InitialAccess |
+| `SOCRadar - Credential exposure` | stolen credentials on dark web bot markets, botnet, blackmarket botnet | machine name (Host), device IP | `CredentialOrigin`, `HasMachineInfo`, `MachineName`, `DeviceIp`, `DeviceCountry`, `MalwareFamily`, `AssetMatch` | CredentialAccess |
+| `SOCRadar - Data leak and PII exposure` | code repository, dark web, IM platform, public storage, PII, malware analysis service | the leak location (URL) | `LeakChannel`, `LeakSource`, `LeakUrl`, `AttackType`, `MatchedAsset` | Reconnaissance, Exfiltration |
+| `SOCRadar - Vulnerability and CVE` | vulnerability monitoring and vulnerability intelligence | affected IP, affected domain | `CveId`, `CvssScore`, `AffectedSoftware`, `AffectedIp`, `AffectedDomain` | Reconnaissance, InitialAccess |
+| `SOCRadar - Other alarms` | everything else, including any type SOCRadar adds later | first IP and URL found in the alarm, the phishing domain if the text names one | `SuspiciousDomain` | none |
+
+The shared custom details are `AlarmId`, `AlarmMainType`, `AlarmSubType`, `SocradarSeverity`,
+`AlarmStatus`, `AlarmCategory` (which rule took it) and `MonitoredAsset` (your asset or brand
+label from the alarm; never an entity, except on vulnerability alarms where the affected asset
+is what has to be fixed). Severity comes from SOCRadar for every rule. VIP alarms have no rule of
+their own: SOCRadar's alarm data held none to base one on, so they fall into `Other alarms`.
+
+The credential rule is the largest by volume. `EnableCredentialRule=false` switches it off: those
+alarms stay in `SOCRadar_Alarms_CL` (hunting queries and the workbook still see them) but get no
+incident, and no other rule picks them up. Rule names, severity, tactics and the rest can be
+edited in Microsoft Sentinel; a redeploy overwrites those edits.
+
+The credential rule never copies the exposed credential (user name, URL, password) into an alert.
 
 ### Microsoft Defender portal
 
@@ -424,15 +453,16 @@ What is different in `AlertBacked`:
   line away only switches the write-back off for that incident.
 - The import extracts the first IPv4, domain and URL indicator from the alarm text and content
   (the same regex technique Direct mode uses for its bookmark enrichment) and writes them to the row. The
-  rule maps the IP and the URL from them (a SOCRadar platform link is dropped, it is not an
-  indicator). The domain is different: the first regex domain is alphabetical and on lookalike
+  catch-all rule maps the IP and the URL from them (a SOCRadar platform link is dropped, it is not an
+  indicator); the typed rules read their own fields from the alarm instead (see
+  [The five rules](#the-five-rules)). The domain is different: the first regex domain is alphabetical and on lookalike
   alarms it is often a name server, so the DNS entity is the phishing domain instead
   (`SuspiciousDomain`, read from the `Phishing Domain:` line of the alarm text, falling back to
   the `phishing_domain` payload key; empty for alarm types that have none). The customer's own
   brand (`alarm_asset`) is never an entity; it is the `MonitoredAsset` custom detail, next to
   `SuspiciousDomain`, so an automation rule can branch on them. An `AlertBacked` incident's
-  Entities tab is populated the same run the incident is created. Together with `AlarmUrl` that
-  is 4 entity mappings; a live deploy measured the rule's real platform ceiling at 5 (not the 10
+  Entities tab is populated the same run the incident is created. Together with `AlarmUrl` a rule
+  has 2 to 4 entity mappings; a live deploy measured the platform ceiling at 5 (not the 10
   originally assumed), so this is one indicator per type, not three. This extraction always runs in `AlertBacked` mode and
   does not check `EnableIoCEnrichment` -- that parameter only gates Direct mode's bookmark-based
   enrichment (which needs the elevated Contributor role); the alert-backed path maps entities
@@ -448,7 +478,12 @@ What is different in `AlertBacked`:
   about 20 minutes after the import (the 12 to 25 minute range is an estimate), not 3 to 11. An
   alarm stays eligible for a day after it is written; if the rule does not run for longer than
   that, the alarm never gets an alert.
-- Upgrading an `AlertBacked` install from an older version: the rule is updated in place and
+- Upgrading a single-rule `AlertBacked` install to the five rules: the old rule keeps its id and
+  becomes `Other alarms`; four new rules are added next to it, and the labeling automation rule
+  now lists all five. An alarm the old rule alerted in its last run before the redeploy can be
+  alerted once more by its new typed rule if that rule's first run comes before the first alert
+  is readable (up to about 10 minutes; not measured on an upgrade), which opens a second incident.
+  Close it. Older versions: the rule is updated in place and
   skips alarms whose earlier alert carries the `AlarmId` custom detail. An alarm the old rule
   alerted moments before the redeploy may still be alerted once more, and if its first incident
   was already closed that opens a second one. Not measured; close it, Sync handles both.

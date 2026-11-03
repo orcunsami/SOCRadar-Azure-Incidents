@@ -42,11 +42,78 @@ def workflow(template, kind):
             return resource
 
 
+CATS = ["Phishing", "Credential", "DataLeak", "Vulnerability", "Other"]
+TARGET = [0]  # which of the five rules a rule-scoped mutation hits
+
+
 def rule(template):
     nested = next(r for r in template["resources"] if r.get("name") == "deploy-alert-backed-rule")
     inner = nested["properties"]["template"]["resources"]
-    return next(r for r in inner if r["type"].endswith("/alertRules")), \
+    return [r for r in inner if r["type"].endswith("/alertRules")][TARGET[0]], \
         next(r for r in inner if r["type"].endswith("/automationRules"))
+
+
+def all_rules(template):
+    nested = next(r for r in template["resources"] if r.get("name") == "deploy-alert-backed-rule")
+    return [r for r in nested["properties"]["template"]["resources"] if r["type"].endswith("/alertRules")]
+
+
+def m_classifier_drifts_in_one_rule(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('"Code Repository Data Leak", ', "", 1)
+
+
+def m_pair_dropped_everywhere(t):
+    for r in all_rules(t):
+        r["properties"]["query"] = r["properties"]["query"].replace('"PII Exposure", ', "", 1)
+
+
+def m_catch_all_new_guid(t):
+    t["variables"]["alertBackedRuleId"] = "[guid(variables('workspaceResourceId'), 'socradar-alert-backed-rule-2')]"
+
+
+def m_automation_omits_one_rule(t):
+    _, auto = rule(t)
+    values = auto["properties"]["triggeringLogic"]["conditions"][0]["conditionProperties"]["propertyValues"]
+    del values[-1]
+
+
+def m_credential_switch_ignored(t):
+    for r in all_rules(t):
+        if "Credential" in r["properties"]["query"].split("| where AlarmCategory == ")[1][:14]:
+            r["properties"]["enabled"] = True
+
+
+def m_dcr_drops_a_key(t):
+    for res in t["resources"]:
+        if res["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in res["name"]:
+            for flow in res["properties"]["dataFlows"]:
+                flow["transformKql"] = flow["transformKql"].replace(", 'computer_name', AlarmPayload['content']['computer_name']", "")
+
+
+def m_title_uses_entity_column(t):
+    r, _ = rule(t)
+    r["properties"]["alertDetailsOverride"]["alertDisplayNameFormat"] = r["properties"]["alertDetailsOverride"]["alertDisplayNameFormat"].replace("SuspiciousDomainLabel", "SuspiciousDomain")
+
+
+def m_credential_copies_secret(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("| extend HasMachineInfo", "| extend ExposedUser = tostring(AlarmPayload['credential_details'])\n| extend HasMachineInfo")
+
+
+def m_origin_by_machine_word(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('Title has "Infected Machine" or Title has "Machine Information Found"', 'Title has "Machine"')
+
+
+def m_leak_url_any(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace(' and LeakUrl !has "socradar.com"', "")
+
+
+def m_query_too_long(t):
+    r, _ = rule(t)
+    r["properties"]["query"] += "\n// " + "x" * 3000
 
 
 def m_default_direct(t):
@@ -273,6 +340,17 @@ def m_domain_regex_greedy(t):
 
 
 MUTATIONS = [
+    ("classifier drifts in one rule", (ROOT, IMPORT), m_classifier_drifts_in_one_rule),
+    ("a pair is dropped from every typed list", (ROOT, IMPORT), m_pair_dropped_everywhere),
+    ("catch-all gets a new rule id", (ROOT, IMPORT), m_catch_all_new_guid),
+    ("automation rule omits one rule id", (ROOT, IMPORT), m_automation_omits_one_rule),
+    ("credential switch is ignored", (ROOT, IMPORT), m_credential_switch_ignored),
+    ("DCR drops a payload key a rule reads", (ROOT,), m_dcr_drops_a_key),
+    ("title placeholder is the entity column", (ROOT, IMPORT), m_title_uses_entity_column),
+    ("credential rule copies the exposed credential", (ROOT, IMPORT), m_credential_copies_secret),
+    ("credential origin keys on the word Machine", (ROOT, IMPORT), m_origin_by_machine_word),
+    ("leak entity may be a SOCRadar link", (ROOT, IMPORT), m_leak_url_any),
+    ("query exceeds the platform limit", (ROOT, IMPORT), m_query_too_long),
     ("IncidentMode defaults to Direct again", (ROOT, IMPORT), m_default_direct),
     ("rule windows on TimeGenerated", (ROOT, IMPORT), m_timegenerated_window),
     ("closed alarms become incidents", (ROOT, IMPORT), m_closed_alarms_alert),
@@ -317,31 +395,43 @@ MUTATIONS = [
 
 
 def main():
+    import inspect
     blind = []
+    total = 0
     for name, paths, mutate in MUTATIONS:
-        originals = {p: open(p, encoding="utf-8").read() for p in paths}
-        try:
-            for p in paths:
-                template = json.loads(originals[p])
-                mutate(template)
-                with open(p, "w", encoding="utf-8") as handle:
-                    handle.write(json.dumps(template, indent=4, ensure_ascii=False))
+        scoped = "rule(t)" in inspect.getsource(mutate)
+        for index in (range(len(CATS)) if scoped else [0]):
+            TARGET[0] = index
+            label = "%s [%s]" % (name, CATS[index]) if scoped else name
+            originals = {p: open(p, encoding="utf-8").read() for p in paths}
             try:
-                result = subprocess.run([sys.executable, TEST], cwd=REPO, capture_output=True, text=True,
-                                        timeout=60, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
-                rc = result.returncode
-            except subprocess.TimeoutExpired:
-                rc = 124
-        finally:
-            for p, text in originals.items():
-                with open(p, "w", encoding="utf-8") as handle:
-                    handle.write(text)
-        if rc == 0:
-            print("BLIND  %-34s test still passed" % name)
-            blind.append(name)
-        else:
-            print("caught %-34s" % name)
-    print("\nblind: %d of %d" % (len(blind), len(MUTATIONS)))
+                changed = False
+                for p in paths:
+                    template = json.loads(originals[p])
+                    before = json.dumps(template, sort_keys=True)
+                    mutate(template)
+                    changed = changed or json.dumps(template, sort_keys=True) != before
+                    with open(p, "w", encoding="utf-8") as handle:
+                        handle.write(json.dumps(template, indent=4, ensure_ascii=False))
+                if not changed:
+                    continue  # the mutation has nothing to bite on in this rule
+                total += 1
+                try:
+                    result = subprocess.run([sys.executable, TEST], cwd=REPO, capture_output=True, text=True,
+                                            timeout=60, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                    rc = result.returncode
+                except subprocess.TimeoutExpired:
+                    rc = 124
+            finally:
+                for p, text in originals.items():
+                    with open(p, "w", encoding="utf-8") as handle:
+                        handle.write(text)
+            if rc == 0:
+                print("BLIND  %-52s test still passed" % label)
+                blind.append(label)
+            else:
+                print("caught %-52s" % label)
+    print("\nblind: %d of %d" % (len(blind), total))
     return 1 if blind else 0
 
 

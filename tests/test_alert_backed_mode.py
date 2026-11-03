@@ -33,12 +33,66 @@ checks = 0
 
 SEVERITY_MARK = "SOCRadar severity: "
 
+CATEGORIES = ["Phishing", "Credential", "DataLeak", "Vulnerability", "Other"]
+ENTITIES = {  # entity mappings after AlarmUrl, as (type, identifier, column)
+    "Phishing": [("DNS", "DomainName", "SuspiciousDomain"), ("IP", "Address", "SuspiciousIp")],
+    "Credential": [("Host", "HostName", "MachineName"), ("IP", "Address", "DeviceIp")],
+    "DataLeak": [("URL", "Url", "LeakUrl")],
+    "Vulnerability": [("IP", "Address", "AffectedIp"), ("DNS", "DomainName", "AffectedDomain")],
+    "Other": [("IP", "Address", "IoCIp1"), ("DNS", "DomainName", "SuspiciousDomain"), ("URL", "Url", "IoCUrl1")],
+}
+SHARED_DETAILS = {"AlarmId": "AlarmId", "AlarmMainType": "AlarmMainType", "AlarmSubType": "AlarmSubType",
+                  "SocradarSeverity": "Severity", "AlarmStatus": "Status"}
+TYPED_DETAILS = {
+    "Phishing": ["SuspiciousDomain", "SuspiciousIp", "PhishingScore", "PhishingKeyword"],
+    "Credential": ["CredentialOrigin", "HasMachineInfo", "MachineName", "DeviceIp", "DeviceCountry", "MalwareFamily", "AssetMatch"],
+    "DataLeak": ["LeakChannel", "LeakSource", "LeakUrl", "AttackType", "MatchedAsset"],
+    "Vulnerability": ["CveId", "CvssScore", "AffectedSoftware", "AffectedIp", "AffectedDomain"],
+    "Other": ["SuspiciousDomain"],
+}
+CONTENT_FIRST = {"Phishing": "Suspicious Domain", "Credential": "Origin", "DataLeak": "Channel",
+                 "Vulnerability": "CVE", "Other": "Suspicious Domain"}
+RULE_IDS = {"Phishing": "alertBackedPhishingRuleId", "Credential": "alertBackedCredentialRuleId",
+            "DataLeak": "alertBackedDataLeakRuleId", "Vulnerability": "alertBackedVulnerabilityRuleId",
+            "Other": "alertBackedRuleId"}
+# Every (main type, sub type) pair the research set holds, with the one rule that must take it.
+FIXTURE = [
+    ("Brand Protection", "Impersonating Domain", "Phishing"), ("Phishing Domain", "State Change", "Phishing"),
+    ("Vulnerability Monitoring", "Mobile Application Vulnerability", "Vulnerability"),
+    ("Vulnerability Monitoring", "Network System Vulnerability", "Vulnerability"),
+    ("Vulnerability Intelligence", "Vulnerability Intelligence Subscription", "Vulnerability"),
+    ("Deep&Dark Web Monitoring", "Stolen Credentials On Dark Web Bot Market", "Credential"),
+    ("Botnet", "Stolen Credentials On Dark Web Bot Market", "Credential"),
+    ("Deep&Dark Web Monitoring", "Black Market Botnet Detection", "Credential"),
+    ("Surface Web Monitoring", "Code Repository Data Leak", "DataLeak"),
+    ("Deep&Dark Web Monitoring", "Dark Web Suspicious Content", "DataLeak"),
+    ("Deep&Dark Web Monitoring", "IM Platform Suspicious Content", "DataLeak"),
+    ("Deep&Dark Web Monitoring", "PII Exposure", "DataLeak"),
+    ("Surface Web Monitoring", "Public Storage Leak", "DataLeak"),
+    ("Surface Web Monitoring", "Malware Analysis Service Monitoring", "DataLeak"),
+    ("Surface Web Monitoring", "Surface Web Suspicious Content", "Other"),
+    ("Threat Hunting", "Proactive Threat Hunting", "Other"),
+    ("Brand Protection", "Social Media Risk", "Other"), ("Brand Protection", "Reputation", "Other"),
+    ("Configuration Weakness", "Mobile Application Security", "Other"),
+    ("Configuration Weakness", "SSL Security", "Other"),
+    ("Internet Asset Inventory Monitoring", "Asset Discovery", "Other"),
+    ("Internet Asset Inventory Monitoring", "DNS Information Change", "Other"),
+    ("Supply Chain Intelligence", "Security Incidents", "Other"),
+    ("Deep&Dark Web Monitoring", "A Sub Type SOCRadar Adds Next Year", "Other"),
+    ("A New Main Type", "Anything", "Other"),
+    # the same sub type under two main types must not be classified on the sub type alone
+    ("Some Other Main Type", "Stolen Credentials On Dark Web Bot Market", "Credential"),
+]
+
+
+_context = [""]
+
 
 def check(condition, message):
     global checks
     checks += 1
     if not condition:
-        failures.append(message)
+        failures.append(f"[{_context[0]}] {message}" if _context[0] else message)
 
 
 def rel(path):
@@ -97,6 +151,30 @@ def nested_rule(template):
         if resource.get("name") == "deploy-alert-backed-rule":
             return resource
     return None
+
+
+def classify(query, main, sub):
+    """Evaluate the case() classifier the rule really carries, not a copy of it."""
+    body = re.search(r"\| extend AlarmCategory = case\((.*?)\n    \"Other\"\)", query, re.S)
+    if body is None:
+        return None
+    for cond, label in re.findall(r'(.*?),\s*"(Phishing|Vulnerability|Credential|DataLeak)",', body.group(1), re.S):
+        expr = re.sub(r'(\w+) =~ "([^"]+)"', lambda m: f'({m.group(1)}.lower() == {m.group(2).lower()!r})', cond)
+        expr = re.sub(r'(\w+) in~ \(([^)]*)\)',
+                      lambda m: f'({m.group(1)}.lower() in {[x.strip().strip(chr(34)).lower() for x in m.group(2).split(chr(34) + ", " + chr(34))]!r})',
+                      expr)
+        expr = " ".join(expr.split())
+        if eval(expr, {}, {"AlarmMainType": main, "AlarmSubType": sub}):
+            return label
+    return "Other"
+
+
+def origin_of(query, title):
+    line = re.search(r"\| extend CredentialOrigin = case\((.*)\)\n", query).group(1)
+    for cond, label in re.findall(r'((?:Title has "[^"]+"(?: or )?)+), "(\w+)"', line):
+        if any(w.lower() in title.lower() for w in re.findall(r'Title has "([^"]+)"', cond)):
+            return label
+    return "Other"
 
 
 # --------------------------------------------------------------------------- ARM level
@@ -170,13 +248,21 @@ if root_nested:
     inner = root_nested["properties"]["template"]["resources"]
     rules = [r for r in inner if r["type"].endswith("/alertRules")]
     autos = [r for r in inner if r["type"].endswith("/automationRules")]
-    check(len(rules) == 1 and len(autos) == 1, "nested template must hold exactly one rule and one automation rule")
-    if rules:
-        rule = rules[0]
+    check(len(rules) == 5 and len(autos) == 1, "nested template must hold exactly five rules and one automation rule")
+    by_cat = {}
+    for found in rules:
+        label_match = re.search(r'\| where AlarmCategory == "(\w+)"', found["properties"]["query"])
+        check(label_match is not None, "every rule query must filter on exactly one AlarmCategory")
+        if label_match:
+            by_cat[label_match.group(1)] = found
+    check(sorted(by_cat) == sorted(CATEGORIES), f"the five rules must cover exactly {CATEGORIES}: got {sorted(by_cat)}")
+    for cat, rule in by_cat.items():
+        _context[0] = cat
         props = rule["properties"]
         query = props["query"]
         check(rule.get("kind") == "Scheduled", "rule kind must be Scheduled")
-        check(props.get("enabled") is True, "rule must be enabled")
+        check(props.get("enabled") == (True if cat != "Credential" else "[parameters('EnableCredentialRule')]"),
+              "rule must be enabled; only the credential rule has an off switch, and it is a parameter")
         check(props.get("queryFrequency") == "PT10M",
               "rule must run every 10 minutes: the platform runs a query ~6 min behind the clock, so a shorter "
               "interval hides the previous alert from the next run and every alarm alerts twice (measured)")
@@ -265,65 +351,83 @@ if root_nested:
         check(details.get("AlarmId") == "AlarmId", "AlarmId must be a custom detail")
 
         mappings = props.get("entityMappings", [])
-        # AlarmUrl stays first: it is the one entity every alarm always has, used to be the
-        # grouping key before IoC entities existed. One IoC entity per type (the first IP/
-        # domain/URL the Logic App regex-extracted from the alarm, same technique Direct mode
-        # uses for bookmark enrichment) rides alongside it. A live deploy measured the real
-        # platform cap at 5 (not the 10 originally assumed from general entityMappings docs --
-        # "Invalid length of '10' for 'EntityMappings'. ... should be between '1' and '5'"),
-        # so this stays at 4 of 5 on purpose, not 3-per-type.
+        # AlarmUrl stays first in every rule: it is the one entity every alarm always has, and Sync
+        # reads the alarm id from it when a title was rewritten. The platform cap is 5 mappings
+        # (live-measured: "Invalid length of '10' for 'EntityMappings' ... between '1' and '5'").
         check(mappings and mappings[0] == {"entityType": "URL", "fieldMappings": [{"identifier": "Url", "columnName": "AlarmUrl"}]},
               "AlarmUrl must still be the first URL entity mapping")
-        check(len(mappings) == 4, f"entityMappings must total 4 (real platform cap is 5, measured via live deploy): found {len(mappings)}")
-        # The DNS entity is the phishing domain the alarm names (content.phishing_domain), not the
-        # first domain the import regex finds in the text: on a lookalike-domain alarm that was a
-        # registrar name server, and on others it can be the customer's own domain. The monitored
-        # asset (the customer's own brand) is a custom detail and never an entity.
-        ioc_cols = {"IoCIp1": ("IP", "Address"), "SuspiciousDomain": ("DNS", "DomainName"), "IoCUrl1": ("URL", "Url")}
-        by_col = {m["fieldMappings"][0]["columnName"]: (m["entityType"], m["fieldMappings"][0]["identifier"])
-                  for m in mappings[1:]}
-        for col, expected in ioc_cols.items():
-            check(by_col.get(col) == expected,
-                  f"entityMappings must map {col} as a single-identifier {expected[0]} entity")
-        check("IoCDomain1" not in by_col and "MonitoredAsset" not in by_col,
-              "the regex-found domain and the monitored asset must not be entities")
-        check(details.get("SuspiciousDomain") == "SuspiciousDomain" and details.get("MonitoredAsset") == "MonitoredAsset",
-              "SuspiciousDomain and MonitoredAsset must be custom details so an automation rule can branch on them")
-        check('extract(@"Phishing Domain:\\s*([^\\s,;]+)", 1, AlarmText)' in query
-              and "tostring(AlarmPayload['phishing_domain'])" in query and "SuspiciousDomain = tolower(" in query
-              and "MonitoredAsset = tostring(AlarmPayload['alarm_asset'])" in query,
-              "SuspiciousDomain must come from the 'Phishing Domain:' line of the alarm text (payload key as fallback) "
-              "and MonitoredAsset from alarm_asset")
-        # The extraction regex must take only the first token: "Phishing Domain: foo.com,bar.com"
-        # used to become one invalid DNS value. Run the very regex the rule carries.
-        m_dom = re.search(r'extract\(@"(Phishing Domain:[^"]+)", 1, AlarmText\)', query)
-        check(m_dom is not None, "could not find the Phishing Domain extraction in the rule query")
-        if m_dom:
-            dom_re = m_dom.group(1)
-            for text, want in (("Phishing Domain: foo.com,bar.com Score: 80", "foo.com"),
-                               ("Phishing Domain: a.example;b.example x", "a.example"),
-                               ("Phishing Domain: evil-example.com Score: 1", "evil-example.com"),
-                               ("Phishing Domain: evil-example.com. Score: 1", "evil-example.com.")):
-                hit = re.search(dom_re, text)
-                check(hit is not None and hit.group(1) == want,
-                      f"Phishing Domain regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+        want_entities = ENTITIES[cat]
+        got_entities = [(m["entityType"], m["fieldMappings"][0]["identifier"], m["fieldMappings"][0]["columnName"])
+                        for m in mappings[1:]]
+        check(all(len(m["fieldMappings"]) == 1 for m in mappings), "every entity mapping must be a single identifier")
+        check(len(mappings) <= 5, f"entityMappings above 5 are rejected by the platform (measured): found {len(mappings)}")
+        check(got_entities == want_entities, f"entity mappings after AlarmUrl must be {want_entities}, got {got_entities}")
+        # The monitored asset (the customer's own brand) is never an entity in any rule, and the regex
+        # domain IoCDomain1 only feeds the catch-all: on a lookalike alarm it is a name server.
+        mapped_cols = {m["fieldMappings"][0]["columnName"] for m in mappings}
+        check("MonitoredAsset" not in mapped_cols, "the monitored asset must not be an entity")
+        check("IoCDomain1" not in mapped_cols,
+              "the regex-found domain must not be an entity in any rule: on a lookalike alarm it is a name server")
+        check(details.get("MonitoredAsset") == "MonitoredAsset" and details.get("AlarmCategory") == "AlarmCategory",
+              "MonitoredAsset and AlarmCategory must be custom details in every rule")
+        for key in SHARED_DETAILS:
+            check(details.get(key) == SHARED_DETAILS[key], f"custom detail {key} must be shared by every rule")
+        for key in TYPED_DETAILS[cat]:
+            check(details.get(key) == key, f"custom detail {key} must be set on the {cat} rule")
+        check(all(len(k) <= 20 for k in details), "custom detail keys must be 20 characters or fewer")
         check('IoCUrl1 = iff(IoCUrl1 has "socradar.com", "", IoCUrl1)' in query,
               "a SOCRadar platform link must not become an IoC URL entity")
-        check("pack('Suspicious Domain', SuspiciousDomain," in query,
-              "the Content block must show the extracted phishing domain first, not depend on the payload key")
         check("array_slice(ContentRows, 0, 5)" in query,
               "the Content block must stop at the first 5 fields, not list every field the alarm carries")
-        infra_text = open(os.path.join(REPO, "Playbooks", "SOCRadar-Alarms-Infrastructure", "azuredeploy.json")).read()
-        check("'phishing_domain', AlarmPayload['content']['phishing_domain']" in infra_text,
-              "infrastructure template: the alarms DCR transform must keep content.phishing_domain")
-        for dcr_owner, label in ((root, "root template"),):
-            for r in dcr_owner["resources"]:
-                if r["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in r["name"]:
-                    kql = json.dumps(r["properties"]["dataFlows"])
-                    check("phishing_domain" in kql, f"{label}: the alarms DCR transform must keep content.phishing_domain, or the rule has nothing to read")
+        check(query.count("| extend AlarmContent = pack('") == 1 and f"pack('{CONTENT_FIRST[cat]}'," in query,
+              f"the Content block of the {cat} rule must lead with {CONTENT_FIRST[cat]}")
         check('strcat("https://platform.socradar.com/app/company/", CompanyId, '
               '"/alarm-management?tab=approved&field=alarmId&operator=equals&value=", AlarmId)' in query,
               "AlarmUrl must open the alarm in the platform (field=alarmId ... value=<id>), the shape Sync parses")
+        check(len(query) < 9000, f"the query is {len(query)} characters; the platform limit is 10000")
+        check("MonitoredAsset = tostring(AlarmPayload['alarm_asset'])" in query,
+              "MonitoredAsset must come from alarm_asset")
+
+        if cat in ("Phishing", "Other"):
+            check("pack('Suspicious Domain', SuspiciousDomain," in query,
+                  "the Content block must show the extracted phishing domain first, not the payload key")
+            check('extract(@"Phishing Domain:\\s*([^\\s,;]+)", 1, AlarmText)' in query
+                  and "tostring(AlarmPayload['phishing_domain'])" in query and "SuspiciousDomain = tolower(" in query,
+                  "SuspiciousDomain must come from the 'Phishing Domain:' line of the alarm text (payload key as fallback)")
+            check(cat != "Phishing" or ("SuspiciousDomainLabel = coalesce(SuspiciousDomain, \"n/a\")" in query
+                  and props["alertDetailsOverride"]["alertDisplayNameFormat"] == "[SOCRadar] #{{AlarmId}} - {{Title}} - {{SuspiciousDomainLabel}}"),
+                  "the title placeholder must be a coalesced label column, never the entity column: an empty "
+                  "placeholder value reverts the whole title and loses the #<id> Sync reads")
+            # The extraction regex must take only the first token: "Phishing Domain: foo.com,bar.com"
+            # used to become one invalid DNS value. Run the very regex the rule carries.
+            m_dom = re.search(r'extract\(@"(Phishing Domain:[^"]+)", 1, AlarmText\)', query)
+            check(m_dom is not None, "could not find the Phishing Domain extraction in the rule query")
+            if m_dom:
+                dom_re = m_dom.group(1)
+                for text, want in (("Phishing Domain: foo.com,bar.com Score: 80", "foo.com"),
+                                   ("Phishing Domain: a.example;b.example x", "a.example"),
+                                   ("Phishing Domain: evil-example.com Score: 1", "evil-example.com"),
+                                   ("Phishing Domain: evil-example.com. Score: 1", "evil-example.com.")):
+                    hit = re.search(dom_re, text)
+                    check(hit is not None and hit.group(1) == want,
+                          f"Phishing Domain regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+        elif cat != "Other":
+            check("SuspiciousDomain" not in query,
+                  "only the phishing rule and the catch-all may derive a suspicious domain")
+        if cat == "Credential":
+            # The exposed credential is third-party personal data: it must never be copied into an alert.
+            check("credential_details" not in query and "username" not in query,
+                  "the credential rule must not read the exposed credential itself")
+            for text, want in (("Customer Credential - No Machine Information", "Customer"),
+                               ("Employee Credential in Combolists", "Employee"),
+                               ("Machine Information Found for Previously Leaked Credential", "InfectedMachine"),
+                               ("Compromised Customer Credential from Infected Machine", "InfectedMachine"),
+                               ("Possible Employee Account for Sale in Russian Blackmarket", "Employee"),
+                               ("VPN Account", "VPN")):
+                check(origin_of(query, text) == want, f"CredentialOrigin of {text!r} must be {want}")
+        if cat == "DataLeak":
+            check('LeakUrl startswith "http" and LeakUrl !has "socradar.com"' in query,
+                  "the leak entity must be a real link and never a SOCRadar platform link")
 
         grouping = props.get("incidentConfiguration", {}).get("groupingConfiguration", {})
         check(props.get("incidentConfiguration", {}).get("createIncident") is True, "rule must create incidents")
@@ -345,7 +449,10 @@ if root_nested:
         declared = set()
         for stream in dcr["properties"]["streamDeclarations"].values():
             declared |= {c["name"] for c in stream["columns"]}
-        derived = {"AlarmUrl", "SentinelSeverity", "AlarmDescription", "SuspiciousDomain", "MonitoredAsset"}
+        derived = set()
+        for line in query.split("\n"):
+            if line.startswith("| extend "):
+                derived |= set(re.findall(r"(?:^\| extend |, )([A-Za-z_]\w*) = ", line))
         missing = columns - declared - derived
         check(not missing, f"rule query projects columns the alarms table does not have: {sorted(missing)}")
         check(set(details.values()) <= columns, "every custom detail must be a projected column")
@@ -353,8 +460,61 @@ if root_nested:
         # ARM would read a string that starts with [ and ends with ] as an expression, and the
         # Content Hub packaging tool escapes such strings (EXP-AZURE-0161). None may exist here.
         bracketed = [s for s in strings(rule) if s.startswith("[") and s.endswith("]") and not s.startswith("[concat")
-                     and not s.startswith("[resourceId") and not s.startswith("[guid")]
+                     and not s.startswith("[resourceId") and not s.startswith("[guid")
+                     and not s.startswith("[parameters('EnableCredentialRule')")]
         check(not bracketed, f"rule carries literal strings that ARM would parse as expressions: {bracketed[:2]}")
+
+    _context[0] = "rule set"
+    # --- the five rules form one exhaustive, exclusive set
+    queries = {c: r["properties"]["query"] for c, r in by_cat.items()}
+    if len(queries) == 5:
+        def between(q, start, end):
+            i = q.index(start)
+            return q[i:q.index(end, i) + len(end)] if end else q[i:]
+        for part, start, end in (
+                ("classifier", "// One label per alarm", '"Other")'),
+                ("head (dedup, window, link, severity)", "// One alert per alarm.", "| extend SentinelSeverity"),
+                ("description body", "| mv-apply ContentKey", "| extend AlarmDescription = iff"),
+                ("tail", "| order by TimeGenerated asc", None)):
+            texts = {between(q, start, end) for q in queries.values()}
+            check(len(texts) == 1, f"the {part} must be byte-identical in all five rules, found {len(texts)} variants")
+        for cat, q in queries.items():
+            for main, sub, want in FIXTURE:
+                check(classify(q, main, sub) == want,
+                      f"{cat} rule's classifier puts ({main}, {sub}) in {classify(q, main, sub)}, want {want}")
+        # Exclusive: each rule keeps only its own label; exhaustive: the default label is the catch-all's.
+        check(all(f'| where AlarmCategory == "{c}"' in q for c, q in queries.items()),
+              "each rule must keep exactly its own AlarmCategory")
+        check({classify(queries["Other"], "x", "y")} == {"Other"}, "an unknown type must fall to Other")
+        # the DCR keeps every payload key the rules read
+        dcr_kql = " ".join(json.dumps(r["properties"]["dataFlows"]) for r in root["resources"]
+                           if r["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in r["name"])
+        infra_kql = " ".join(json.dumps(r["properties"]["dataFlows"]) for r in load(os.path.join(
+            REPO, "Playbooks", "SOCRadar-Alarms-Infrastructure", "azuredeploy.json"))["resources"]
+            if r["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in r["name"])
+        check(dcr_kql == infra_kql, "the alarms DCR transform differs between azuredeploy.json and the infrastructure template")
+        kept = set(re.findall(r"'(\w+)', AlarmPayload\[", dcr_kql))
+        for cat, q in queries.items():
+            used = set(re.findall(r"AlarmPayload\['(\w+)'\]", q))
+            check(used <= kept, f"{cat} rule reads payload keys the DCR transform drops: {sorted(used - kept)}")
+        check("credential_details" not in dcr_kql and "username" not in dcr_kql,
+              "the DCR transform must not keep the exposed credential itself")
+    ids = root["variables"]
+    check(ids.get("alertBackedRuleId") == "[guid(variables('workspaceResourceId'), 'socradar-alert-backed-rule')]",
+          "the catch-all must keep the original rule id, or an upgrade adds a second rule for the same alarms")
+    seeds = [re.search(r"'([\w-]+)'\)\]$", ids.get(v, "")) for v in RULE_IDS.values()]
+    check(all(seeds) and len({m.group(1) for m in seeds}) == 5, "the five rule ids must come from five different guid seeds")
+    for cat, found in by_cat.items():
+        check(found["name"] == "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/', variables('%s'))]" % RULE_IDS[cat],
+              f"the {cat} rule must be named by its own id variable")
+    check(len({r["properties"]["displayName"] for r in rules}) == 5, "the five rules need five different display names")
+    for path, template in ((ROOT, root), (IMPORT, import_pb)):
+        credential = template["parameters"].get("EnableCredentialRule", {})
+        check(credential.get("type") == "bool" and credential.get("defaultValue") is True,
+              f"{rel(path)}: EnableCredentialRule must be a bool defaulting to true")
+        check(all(template["variables"].get(v) == ids.get(v) for v in RULE_IDS.values()),
+              f"{rel(path)}: the rule id variables differ from azuredeploy.json")
+    _context[0] = ""
 
     if autos:
         auto = autos[0]["properties"]
@@ -363,16 +523,21 @@ if root_nested:
         check(logic.get("triggersOn") == "Incidents" and logic.get("triggersWhen") == "Created",
               "automation rule must trigger on incident creation")
         conditions = logic.get("conditions", [])
-        check(len(conditions) == 1 and conditions[0]["conditionProperties"]["propertyName"] == "IncidentRelatedAnalyticRuleIds"
-              and conditions[0]["conditionProperties"]["operator"] == "Contains"
-              and "alertBackedRuleId" in conditions[0]["conditionProperties"]["propertyValues"][0],
-              "automation rule must match incidents of this rule by IncidentRelatedAnalyticRuleIds Contains <rule id>")
+        cond_props = conditions[0]["conditionProperties"] if conditions else {}
+        check(len(conditions) == 1 and cond_props.get("propertyName") == "IncidentRelatedAnalyticRuleIds"
+              and cond_props.get("operator") == "Contains",
+              "automation rule must match incidents of these rules by IncidentRelatedAnalyticRuleIds Contains <rule ids>")
+        for var in RULE_IDS.values():
+            check(sum(f"variables('{var}')" in v for v in cond_props.get("propertyValues", [])) == 1,
+                  f"automation rule must list the {var} rule exactly once, or Sync never finds that rule's incidents")
+        check(len(cond_props.get("propertyValues", [])) == 5, "automation rule must list exactly the five rule ids")
         actions = auto.get("actions", [])
         check(len(actions) == 1 and actions[0]["actionType"] == "ModifyProperties"
               and actions[0]["actionConfiguration"].get("labels") == [{"labelName": "SOCRadar"}],
               "automation rule must add exactly the SOCRadar label: it is what Sync filters on")
-        check(any("alertBackedRuleId" in d for d in autos[0].get("dependsOn", [])),
-              "automation rule must depend on the analytics rule")
+        for var in RULE_IDS.values():
+            check(any(f"variables('{var}')" in d for d in autos[0].get("dependsOn", [])),
+                  f"automation rule must depend on the {var} rule")
 
 # --------------------------------------------------------------------------- import workflow
 

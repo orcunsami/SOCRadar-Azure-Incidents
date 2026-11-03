@@ -74,7 +74,8 @@ def find(o, name):
 for rel in ["azuredeploy.json", "Playbooks/SOCRadar-Alarm-Import/azuredeploy.json"]:
     s = read(rel)
     check(s.count(DESC_LINK) == 1, f"{rel}: description link missing or changed")
-    check(s.count(KQL_LINK.replace('"', '\\"')) == 1, f"{rel}: alert-backed AlarmUrl missing or changed")
+    check(s.count(KQL_LINK.replace('"', '\\"')) == 5,
+          f"{rel}: each of the five alert-backed rules must carry the AlarmUrl link")
 
 for rel in ["socradar-kql-queries.kql", "Analytic Rules/SOCRadarCriticalAlarmDetection.yaml"]:
     check(read(rel).count(KQL_LINK) == 1, f"{rel}: alarm link missing or changed")
