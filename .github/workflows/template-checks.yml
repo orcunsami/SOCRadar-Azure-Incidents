@@ -11,6 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Commit messages carry no identifiers or signatures
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          TIP: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -e
+          # A new branch, a force push or a manual run has no usable "before": check the tip commit only.
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            RANGE="$TIP~1..$TIP"
+          else
+            RANGE="$BASE..$TIP"
+          fi
+          echo "  range $RANGE"
+          bash tools/check_commit_hygiene.sh "$RANGE"
 
       - name: Every ARM template parses as JSON
         run: |
