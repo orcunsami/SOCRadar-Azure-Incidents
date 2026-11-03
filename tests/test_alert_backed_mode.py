@@ -114,6 +114,19 @@ FIXTURE = [
 _context = [""]
 
 
+def eval_switch(expression, mode, credential=True):
+    """Evaluate the small boolean ARM expressions that switch a rule: equals() and and() over two parameters."""
+    if not isinstance(expression, str):
+        return expression
+    text = expression[1:-1] if expression.startswith("[") and expression.endswith("]") else expression
+    text = text.replace("parameters('IncidentMode')", repr(mode)).replace("parameters('EnableCredentialRule')", repr(credential))
+    text = re.sub(r"\band\(", "all_of(", text)
+    text = re.sub(r"\bequals\(", "same(", text)
+    if re.search(r"[^\w\s,()'=.-]", text):
+        raise ValueError(expression)
+    return eval(text, {"__builtins__": {}}, {"all_of": lambda *a: all(a), "same": lambda a, b: a == b})
+
+
 def check(condition, message):
     global checks
     checks += 1
@@ -246,8 +259,12 @@ for path, template in ((ROOT, root), (IMPORT, import_pb)):
     nested = nested_rule(template)
     check(nested is not None, f"{label}: no deploy-alert-backed-rule nested deployment")
     if nested:
-        check(nested.get("condition") == "[equals(parameters('IncidentMode'), 'AlertBacked')]",
-              f"{label}: the rule deployment must be conditional on AlertBacked")
+        # Deployed in Direct mode too, switched off: an incremental deployment never deletes a rule
+        # whose condition went false, so switching back to Direct would leave them raising a second
+        # incident per alarm. Only where the alarms table exists (same resource group).
+        check(nested.get("condition") == "[and(variables('alarmsTableEnabled'), not(variables('isExternalWorkspace')))]",
+              f"{label}: the rule deployment must exist whenever the alarms table does and the workspace is in "
+              f"this resource group, not only in AlertBacked (found {nested.get('condition')!r})")
         check(nested.get("resourceGroup") == "[parameters('WorkspaceResourceGroup')]",
               f"{label}: the rule deployment must target WorkspaceResourceGroup")
         check(nested["properties"].get("expressionEvaluationOptions", {}).get("scope") == "outer",
@@ -307,8 +324,19 @@ if root_nested:
         props = rule["properties"]
         query = props["query"]
         check(rule.get("kind") == "Scheduled", "rule kind must be Scheduled")
-        check(props.get("enabled") == (True if cat != "Credential" else "[parameters('EnableCredentialRule')]"),
-              "rule must be enabled; only the credential rule has an off switch, and it is a parameter")
+        switch = props.get("enabled")
+        try:
+            direct_on = eval_switch(switch, "Direct", True)
+            ab_on = eval_switch(switch, "AlertBacked", True)
+            ab_off_cred = eval_switch(switch, "AlertBacked", False)
+        except ValueError:
+            check(False, f"rule is switched by an expression this test cannot read: {switch!r}")
+        else:
+            check(direct_on is False,
+                  "rule must be off in Direct mode: switching back from AlertBacked would otherwise raise a second incident per alarm")
+            check(ab_on is True, "rule must be on in AlertBacked mode")
+            check(ab_off_cred is (cat != "Credential"),
+                  "only the credential rule has an off switch (EnableCredentialRule), and it must honour it")
         check(props.get("queryFrequency") == "PT10M",
               "rule must run every 10 minutes: the platform runs a query ~6 min behind the clock, so a shorter "
               "interval hides the previous alert from the next run and every alarm alerts twice (measured)")
@@ -588,7 +616,7 @@ if root_nested:
         # Content Hub packaging tool escapes such strings (EXP-AZURE-0161). None may exist here.
         bracketed = [s for s in strings(rule) if s.startswith("[") and s.endswith("]") and not s.startswith("[concat")
                      and not s.startswith("[resourceId") and not s.startswith("[guid")
-                     and not s.startswith("[parameters('EnableCredentialRule')")]
+                     and s != rule["properties"].get("enabled")]  # the on/off switch is an expression on purpose
         check(not bracketed, f"rule carries literal strings that ARM would parse as expressions: {bracketed[:2]}")
 
     _context[0] = "rule set"
@@ -646,6 +674,12 @@ if root_nested:
     if autos:
         auto = autos[0]["properties"]
         check(auto.get("order") == 1, "automation rule must declare order")
+        try:
+            check(eval_switch(auto.get("triggeringLogic", {}).get("isEnabled"), "Direct", True) is False
+                  and eval_switch(auto.get("triggeringLogic", {}).get("isEnabled"), "AlertBacked", True) is True,
+                  "the labeling automation rule must be on in AlertBacked and off in Direct")
+        except ValueError:
+            check(False, "the labeling automation rule is switched by an expression this test cannot read")
         logic = auto.get("triggeringLogic", {})
         check(logic.get("triggersOn") == "Incidents" and logic.get("triggersWhen") == "Created",
               "automation rule must trigger on incident creation")
@@ -670,8 +704,8 @@ if root_nested:
     orders = sorted([autos[0]["properties"].get("order")] + [a["properties"].get("order") for a in samples]) if autos else []
     check(orders == [1, 2, 3], f"the labeler and the two samples need orders 1, 2, 3: got {orders}")
     for a in samples:
-        check(a.get("condition") == "[parameters('DeploySampleAutomationRules')]",
-              "a sample automation rule must be conditional on DeploySampleAutomationRules")
+        check(a.get("condition") == "[and(parameters('DeploySampleAutomationRules'), equals(parameters('IncidentMode'), 'AlertBacked'))]",
+              "a sample automation rule must be conditional on DeploySampleAutomationRules and on AlertBacked")
         check(a["properties"]["triggeringLogic"]["triggersOn"] == "Incidents"
               and a["properties"]["triggeringLogic"]["triggersWhen"] == "Created", "a sample must trigger on incident creation")
         check(all(act["actionType"] == "ModifyProperties" for act in a["properties"]["actions"]),

@@ -15,6 +15,7 @@ shape and never runs a workflow action.
 | `../tools/check_template_drift.py` | The standalone playbooks have not fallen behind `azuredeploy.json` |
 | `../tools/check_analytic_rules.py` | The shipped analytic rules are well formed |
 | `test_checkpoint.py` | The import window comes from the storage checkpoint, not from incident titles: the account's name and security properties, the role assignment's scope, the GET/PUT headers Table Storage requires, and that the checkpoint is written only after a complete read |
+| `../tools/check_commit_hygiene.sh` | Before pushing: fails when a commit message in `master..HEAD` carries a company id, a workspace or resource group name, an alarm id or a tool signature. Runs in CI too; `--msg-file` makes it a `commit-msg` hook |
 | `test_daily_rescan.py` | The shipped lookback expression, evaluated at fixed clock times: once a day after 09:00 UTC it reaches back 5 days, otherwise the gap since the last run, never past 7 days; no parameter exposes it; Direct mode imports nothing while the existing-incident list is cut short; every SOCRadar call of the import sends a User-Agent |
 | `mutate_daily_rescan.py` | Breaks the rescan in 10 ways in both template copies; the rescan test must fail each one |
 | `test_severity_sync_logic.py` | The severity write-back can only raise a severity, is gated by `SyncSeverity`, is judged by `is_success`, and that both label builders carry the labels Sync reads |

@@ -236,6 +236,56 @@ def m_cap_formula_loosened(t):
     workflow(t, "import")["properties"]["parameters"]["AlertBackedMaxNewPerRun"]["value"] = "[div(48, div(10, parameters('PollingIntervalMinutes')))]"
 
 
+AB = "equals(parameters('IncidentMode'), 'AlertBacked')"
+
+
+def m_rules_enabled_always(t):
+    for r in all_rules(t):
+        r["properties"]["enabled"] = True
+
+
+def m_rules_disabled_always(t):
+    for r in all_rules(t):
+        r["properties"]["enabled"] = False
+
+
+def m_credential_ignores_switch(t):
+    for r in all_rules(t):
+        if "Credential" in r["properties"]["query"].split("| where AlarmCategory == ")[1][:14]:
+            r["properties"]["enabled"] = "[%s]" % AB
+
+
+def m_credential_ignores_mode(t):
+    for r in all_rules(t):
+        if "Credential" in r["properties"]["query"].split("| where AlarmCategory == ")[1][:14]:
+            r["properties"]["enabled"] = "[parameters('EnableCredentialRule')]"
+
+
+def m_labeler_always_on(t):
+    _, auto = rule(t)
+    auto["properties"]["triggeringLogic"]["isEnabled"] = True
+
+
+def m_labeler_never_on(t):
+    _, auto = rule(t)
+    auto["properties"]["triggeringLogic"]["isEnabled"] = False
+
+
+def m_rules_only_deployed_in_alert_backed(t):
+    nested = next(r for r in t["resources"] if r.get("name") == "deploy-alert-backed-rule")
+    nested["condition"] = "[%s]" % AB
+
+
+def m_rules_deploy_into_external_workspace(t):
+    nested = next(r for r in t["resources"] if r.get("name") == "deploy-alert-backed-rule")
+    nested["condition"] = "[variables('alarmsTableEnabled')]"
+
+
+def m_sample_ignores_mode(t):
+    for a in samples(t):
+        a["condition"] = "[parameters('DeploySampleAutomationRules')]"
+
+
 def m_rule_deployment_unconditional(t):
     nested = next(r for r in t["resources"] if r.get("name") == "deploy-alert-backed-rule")
     nested["condition"] = "[true()]"
@@ -443,7 +493,16 @@ MUTATIONS = [
     ("Direct loop runs in AlertBacked", (ROOT, IMPORT), m_direct_loop_ungated),
     ("marker written before ingest", (ROOT, IMPORT), m_marker_written_before_ingest),
     ("cap formula loosened", (ROOT, IMPORT), m_cap_formula_loosened),
-    ("rule deployed in Direct mode", (ROOT, IMPORT), m_rule_deployment_unconditional),
+    ("rule deployment condition dropped", (ROOT, IMPORT), m_rule_deployment_unconditional),
+    ("rules stay enabled in Direct mode", (ROOT, IMPORT), m_rules_enabled_always),
+    ("rules are never enabled", (ROOT, IMPORT), m_rules_disabled_always),
+    ("credential rule ignores its switch", (ROOT, IMPORT), m_credential_ignores_switch),
+    ("credential rule ignores the mode", (ROOT, IMPORT), m_credential_ignores_mode),
+    ("labeling automation rule always on", (ROOT, IMPORT), m_labeler_always_on),
+    ("labeling automation rule never on", (ROOT, IMPORT), m_labeler_never_on),
+    ("rules deployed only in AlertBacked (switch back leaves them on)", (ROOT, IMPORT), m_rules_only_deployed_in_alert_backed),
+    ("rules deployed into an external workspace", (ROOT, IMPORT), m_rules_deploy_into_external_workspace),
+    ("sample automation rules ignore the mode", (ROOT, IMPORT), m_sample_ignores_mode),
     ("Sync sends unresolved id", (ROOT, SYNC), m_sync_reads_unresolved_id),
     ("Sync skips the resolver", (ROOT, SYNC), m_sync_skips_resolver),
     ("Sync reads any URL entity", (ROOT, SYNC), m_sync_reads_any_url),
