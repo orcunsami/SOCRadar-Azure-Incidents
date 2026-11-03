@@ -96,6 +96,9 @@ jobs:
       - name: Alarm link opens the alarm and Sync reads both shapes
         run: python3 tests/test_alarm_link.py
 
+      - name: Workbook renders and its joins are guarded
+        run: python3 tests/test_workbook.py
+
       - name: No secrets in tracked files
         run: |
           set -e

@@ -297,7 +297,7 @@ is kept as it was.
   disabled; the Logic App reads and writes it with its own managed identity
 - **SOCRadar_Alarms_CL** custom table (optional)
 - **SOCRadarAuditLog_CL** audit table (optional)
-- **SOCRadar Dashboard** workbook (optional, needs the alarms table)
+- **SOCRadar Dashboard** workbook (optional, needs the alarms table): alarms by severity, status and type, open and closed alarms (latest state per alarm), every alarm with its incident number, status and classification (alert-backed mode), and the sync status of SOCRadar incidents (closed incidents with and without the `Synced` label). The incident and sync panels read `SecurityAlert` and `SecurityIncident` and stay empty where those tables do not exist yet
 - **Five hunting queries** under **Microsoft Sentinel > Hunting** (see [Hunting Queries](#hunting-queries))
 - Data Collection Endpoint and Rules for custom tables
 - **Workspace** -- when `DeployNewWorkspace=true` (not the default) and no workspace of that name exists in the deployment RG, with the subscription default tier; an existing one is left untouched
@@ -400,6 +400,28 @@ The credential rule is the largest by volume. `EnableCredentialRule=false` switc
 alarms stay in `SOCRadar_Alarms_CL` (hunting queries and the workbook still see them) but get no
 incident, and no other rule picks them up. Rule names, severity, tactics and the rest can be
 edited in Microsoft Sentinel; a redeploy overwrites those edits.
+
+### Sample automation rules
+
+`DeploySampleAutomationRules=true` (default `false`, `AlertBacked` only) adds two example
+automation rules to copy from:
+
+| Rule | Runs on | Does |
+|---|---|---|
+| `SOCRadar sample - phishing incidents: label and raise severity` | incidents of the phishing rule | adds the label `SOCRadar-Phishing`, sets severity High |
+| `SOCRadar sample - incidents with a suspicious domain: label` | incidents whose alert has a `SuspiciousDomain` custom detail | adds the label `SOCRadar-SuspiciousDomain` |
+
+Neither adds the `SOCRadar` label: the labeling rule (order 1) does that and Sync depends on it.
+
+Notes from deploying these on a live workspace:
+
+- A custom-detail condition has to be a `PropertyArray` condition, not a plain property condition
+  (`Property 'IncidentCustomDetailsKey' can only be used as a nested condition in a condition of type
+  'PropertyArray'`). `IncidentCustomDetailsKey` goes in an array of type `CustomDetails`,
+  `IncidentCustomDetailsValue` in an array of type `CustomDetailValues`, and the platform rejects the
+  key inside a values condition. A condition on a value therefore cannot name the detail it belongs to.
+- To branch on a specific rule, use the rule id (`IncidentRelatedAnalyticRuleIds`) as the first sample does:
+  one rule is one alarm type.
 
 The credential rule never copies the exposed credential (user name, URL, password) into an alert.
 
