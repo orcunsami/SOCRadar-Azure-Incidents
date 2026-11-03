@@ -420,6 +420,8 @@ Notes from deploying these on a live workspace:
   'PropertyArray'`). `IncidentCustomDetailsKey` goes in an array of type `CustomDetails`,
   `IncidentCustomDetailsValue` in an array of type `CustomDetailValues`, and the platform rejects the
   key inside a values condition. A condition on a value therefore cannot name the detail it belongs to.
+  A value-only condition (`CustomDetailValues`, `Contains`) did not match in a live test, even though
+  one of the alert's custom detail values contained the text, so the samples use the key condition.
 - To branch on a specific rule, use the rule id (`IncidentRelatedAnalyticRuleIds`) as the first sample does:
   one rule is one alarm type.
 
