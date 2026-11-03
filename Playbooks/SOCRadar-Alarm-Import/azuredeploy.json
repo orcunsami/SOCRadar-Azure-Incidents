@@ -413,7 +413,7 @@
                         },
                         "Determine_Lookback": {
                             "type": "Compose",
-                            "inputs": "@if(empty(coalesce(body('Read_Checkpoint')?['LastRunUtc'], '')), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(body('Read_Checkpoint')?['LastRunUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60)), 10080))",
+                            "inputs": "@if(empty(coalesce(body('Read_Checkpoint')?['LastRunUtc'], '')), parameters('InitialLookbackMinutes'), min(max(add(div(sub(ticks(utcNow()), ticks(coalesce(body('Read_Checkpoint')?['LastRunUtc'], utcNow()))), 600000000), 15), max(mul(parameters('PollingIntervalMinutes'), 6), 60), if(and(greaterOrEquals(ticks(utcNow()), ticks(concat(formatDateTime(utcNow(), 'yyyy-MM-dd'), 'T09:00:00Z'))), less(ticks(coalesce(body('Read_Checkpoint')?['LastRunUtc'], utcNow())), ticks(concat(formatDateTime(utcNow(), 'yyyy-MM-dd'), 'T09:00:00Z')))), 7200, 0)), 10080))",
                             "runAfter": {
                                 "Check_Checkpoint_Read": [
                                     "Succeeded"
@@ -706,7 +706,8 @@
                                         "method": "GET",
                                         "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/incidents/v4",
                                         "headers": {
-                                            "API-Key": "@{parameters('SocradarApiKey')}"
+                                            "API-Key": "@{parameters('SocradarApiKey')}",
+                                            "User-Agent": "SOCRadar-Azure-Sentinel-Incidents-Import (Azure Logic App)"
                                         },
                                         "queries": {
                                             "page": "@{variables('page')}",
@@ -858,6 +859,12 @@
                                                         "equals": [
                                                             "@parameters('IncidentMode')",
                                                             "Direct"
+                                                        ]
+                                                    },
+                                                    {
+                                                        "equals": [
+                                                            "@variables('incidents_truncated')",
+                                                            false
                                                         ]
                                                     }
                                                 ]
@@ -2055,7 +2062,8 @@
                                                 "method": "GET",
                                                 "uri": "https://platform.socradar.com/api/company/@{parameters('CompanyId')}/incidents/v4",
                                                 "headers": {
-                                                    "API-Key": "@{parameters('SocradarApiKey')}"
+                                                    "API-Key": "@{parameters('SocradarApiKey')}",
+                                                    "User-Agent": "SOCRadar-Azure-Sentinel-Incidents-Import (Azure Logic App)"
                                                 },
                                                 "queries": {
                                                     "alarm_ids": "@{outputs('Extract_Backfill_Alarm_Id')}"

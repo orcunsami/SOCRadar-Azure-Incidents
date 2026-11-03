@@ -104,6 +104,12 @@ jobs:
       - name: Sync reaches back a day and a failed page fails the run
         run: python3 tests/test_sync_window.py
 
+      - name: The once-a-day rescan and the User-Agent behave as specified
+        run: python3 tests/test_daily_rescan.py
+
+      - name: The daily rescan test actually fails when the rescan is broken
+        run: python3 tests/mutate_daily_rescan.py
+
       - name: Shipped queries do what the README says
         run: python3 tests/test_query_logic.py
 

@@ -194,8 +194,10 @@ setting the parameter switches it: the first import reads the window once more a
 it gets a second, rule-created incident. That window starts at the last checkpoint (minus 15
 minutes, and never less than 60 minutes), so an install that has been polling normally re-reads
 only the last hour: in a measured upgrade in place, nothing was re-read and no extra incident
-appeared. Alarms older than the window keep their existing incident and get no second one. To
-keep the previous behaviour, pass `IncidentMode=Direct` explicitly. See
+appeared. The daily rescan is wider: the first run after 09:00 UTC reads 5 days back, and an alarm
+that `Direct` imported has no `alarm-<id>` row, so within that 5 days it gets a second,
+rule-created incident, once; close the old one. Alarms older than 5 days keep their existing
+incident and get no second one. To keep the previous behaviour, pass `IncidentMode=Direct` explicitly. See
 [Incident mode](#incident-mode).
 
 Deployments made before `DeployNewWorkspace` existed stated a pricing tier on the workspace
@@ -350,6 +352,10 @@ with the time the run *started*:
   `InitialLookbackMinutes` (600).
 - Otherwise the gap since the last successful run, plus 15 minutes of overlap, with a floor of
   `max(PollingIntervalMinutes x 6, 60)` minutes and a ceiling of 7 days.
+- The first run at or after 09:00 UTC each day, when the last run was before 09:00 UTC, reads at
+  least the last 5 days (7200 minutes) once, so an alarm that reached SOCRadar late is still
+  picked up. Nothing exposes it as a parameter. Measured: a checkpoint rewound 3 days gave a 7200
+  minute window, not 4335.
 - The row is written only after the run has read every page. A run that dies halfway leaves the
   window where it was, so nothing is skipped.
 - On a fresh deployment the first write can fail while the role assignment propagates. That is
@@ -359,7 +365,10 @@ with the time the run *started*:
 
 **De-duplication** decides whether an alarm already has an incident. Before importing, the run
 lists every `[SOCRadar]`-titled incident in the workspace and skips any alarm whose id is
-already there, which is what makes a widened window harmless.
+already there, which is what makes a widened window harmless. In `Direct` mode the run imports
+nothing while that list was cut short, because the check would be blind and the 5-day rescan
+would then import twice. In `AlertBacked` the check is the `alarm-<id>` row (see
+[Incident mode](#incident-mode)).
 
 Earlier versions derived the window from the newest existing incident's title. That coupled the
 window to the incident list, so a workspace whose incidents had been cleaned up would re-import
