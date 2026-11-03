@@ -16,6 +16,7 @@ number, not a preference, and each one is pinned here:
 
 Run:  python3 tests/test_alert_backed_mode.py
 """
+import hashlib
 import json
 import os
 import re
@@ -52,6 +53,31 @@ TYPED_DETAILS = {
 }
 CONTENT_FIRST = {"Phishing": "Suspicious Domain", "Credential": "Origin", "DataLeak": "Channel",
                  "Vulnerability": "CVE", "Other": "Suspicious Domain"}
+# Change detector for the per-type part of each query (the extend block and the Content pack): the
+# behaviour tests above cover what the expressions must do, the pin makes any edit of them deliberate.
+# After an intended change, print the new values with `python3 tests/test_alert_backed_mode.py --pins`.
+BLOCK_PINS = {
+    "Phishing": [
+        "f6675c6070a2855f0ed5",
+        "e69bab7c7447bb03ce59"
+    ],
+    "Credential": [
+        "2c973c543de2dd2dff7d",
+        "9b37c6665bd08d164609"
+    ],
+    "DataLeak": [
+        "62776d49ff712af88e76",
+        "362937f5389e97dc798b"
+    ],
+    "Vulnerability": [
+        "36f42463aa35a0b351cd",
+        "48425d0e9a53ae6118d9"
+    ],
+    "Other": [
+        "a91b068dbc27ebc9d6f4",
+        "7a348b91825745a0217f"
+    ]
+}
 RULE_IDS = {"Phishing": "alertBackedPhishingRuleId", "Credential": "alertBackedCredentialRuleId",
             "DataLeak": "alertBackedDataLeakRuleId", "Vulnerability": "alertBackedVulnerabilityRuleId",
             "Other": "alertBackedRuleId"}
@@ -179,7 +205,7 @@ def origin_of(query, title, main="Deep&Dark Web Monitoring"):
         expr = re.sub(r'AlarmMainType =~ "([^"]+)"', lambda m: "(main.lower() == %r)" % m.group(1).lower(), expr)
         if eval(" ".join(expr.split()), {}, {"words": words, "main": main}):
             return label
-    return "Other"
+    return re.search(r',\s*"(\w+)"\s*$', line).group(1)  # the default branch the query really carries
 
 
 def kql_regex(query, arg):
@@ -265,7 +291,10 @@ if root_nested:
     inner = root_nested["properties"]["template"]["resources"]
     rules = [r for r in inner if r["type"].endswith("/alertRules")]
     autos = [r for r in inner if r["type"].endswith("/automationRules")]
-    check(len(rules) == 5 and len(autos) == 1, "nested template must hold exactly five rules and one automation rule")
+    samples = [a for a in autos if "Sample" in a["name"]]
+    autos = [a for a in autos if "Sample" not in a["name"]]
+    check(len(rules) == 5 and len(autos) == 1 and len(samples) == 2,
+          "nested template must hold five rules, one labeling automation rule and two optional sample automation rules")
     by_cat = {}
     for found in rules:
         label_match = re.search(r'\| where AlarmCategory == "(\w+)"', found["properties"]["query"])
@@ -538,6 +567,18 @@ if root_nested:
         missing = columns - declared - derived
         check(not missing, f"rule query projects columns the alarms table does not have: {sorted(missing)}")
         check(set(details.values()) <= columns, "every custom detail must be a projected column")
+        # Columns the platform or the query itself needs: the alert severity column, the time column that
+        # `order by` reads, and what the description is built from.
+        for needed in ("TimeGenerated", "AlarmId", "CompanyId", "AlarmText", "AlarmDate", "AlarmDescription",
+                       override.get("alertSeverityColumnName", "SentinelSeverity")):
+            check(needed in columns, f"the projection must keep {needed}")
+        block = query[query.index("| extend MonitoredAsset"):query.index("| extend IoCUrl1")]
+        pack_line = re.search(r"\| extend AlarmContent = pack\(.*", query).group(0)
+        got_pin = [hashlib.sha256(block.encode()).hexdigest()[:20], hashlib.sha256(pack_line.encode()).hexdigest()[:20]]
+        if "--pins" in sys.argv:
+            print("PIN", cat, got_pin)
+        check(got_pin == BLOCK_PINS[cat], f"the {cat} rule's extend block or Content pack changed; behaviour tests passed "
+              "but the change is unreviewed (run with --pins after an intended edit)")
         mapped = {m["fieldMappings"][0]["columnName"] for m in mappings}
         check(mapped <= columns, f"every entity column must be projected: {sorted(mapped - columns)}")
         used = set(re.findall(r"\{\{(\w+)\}\}", override.get("alertDisplayNameFormat", "") + override.get("alertDescriptionFormat", "")))
@@ -624,6 +665,45 @@ if root_nested:
         for var in RULE_IDS.values():
             check(any(f"variables('{var}')" in d for d in autos[0].get("dependsOn", [])),
                   f"automation rule must depend on the {var} rule")
+
+    _context[0] = "sample automation rules"
+    orders = sorted([autos[0]["properties"].get("order")] + [a["properties"].get("order") for a in samples]) if autos else []
+    check(orders == [1, 2, 3], f"the labeler and the two samples need orders 1, 2, 3: got {orders}")
+    for a in samples:
+        check(a.get("condition") == "[parameters('DeploySampleAutomationRules')]",
+              "a sample automation rule must be conditional on DeploySampleAutomationRules")
+        check(a["properties"]["triggeringLogic"]["triggersOn"] == "Incidents"
+              and a["properties"]["triggeringLogic"]["triggersWhen"] == "Created", "a sample must trigger on incident creation")
+        check(all(act["actionType"] == "ModifyProperties" for act in a["properties"]["actions"]),
+              "a sample may only modify incident properties")
+        check(all("SOCRadar" != lab["labelName"] for act in a["properties"]["actions"]
+                  for lab in act["actionConfiguration"].get("labels", [])),
+              "a sample must not add the SOCRadar label: Sync finds incidents through the labeler, not a sample")
+    for a in samples:
+        conds = a["properties"]["triggeringLogic"]["conditions"][0]["conditionProperties"]
+        acts = a["properties"]["actions"][0]["actionConfiguration"]
+        if conds.get("propertyName") == "IncidentRelatedAnalyticRuleIds":
+            check(len(conds["propertyValues"]) == 1 and "alertBackedPhishingRuleId" in conds["propertyValues"][0],
+                  "the phishing sample must match the phishing rule's incidents only")
+            check(acts.get("severity") == "High" and acts.get("labels") == [{"labelName": "SOCRadar-Phishing"}],
+                  "the phishing sample raises severity to High and adds SOCRadar-Phishing")
+        else:
+            # A custom-detail condition must be a PropertyArray of type CustomDetails (live: a bare
+            # IncidentCustomDetailsKey is rejected, and a Key inside CustomDetailValues is rejected too).
+            full = a["properties"]["triggeringLogic"]["conditions"][0]
+            items = full.get("conditionProperties", {}).get("itemConditions", [])
+            check(full.get("conditionType") == "PropertyArray"
+                  and full["conditionProperties"].get("arrayType") == "CustomDetails"
+                  and full["conditionProperties"].get("arrayConditionType") == "AnyItem"
+                  and [(i["conditionProperties"]["propertyName"], i["conditionProperties"]["operator"], i["conditionProperties"]["propertyValues"]) for i in items]
+                  == [("IncidentCustomDetailsKey", "Equals", ["SuspiciousDomain"])],
+                  "the custom-detail sample must test that the SuspiciousDomain custom detail exists")
+            check(acts.get("labels") == [{"labelName": "SOCRadar-SuspiciousDomain"}], "the custom-detail sample adds SOCRadar-SuspiciousDomain")
+    for path, template in ((ROOT, root), (IMPORT, import_pb)):
+        sample_param = template["parameters"].get("DeploySampleAutomationRules", {})
+        check(sample_param.get("type") == "bool" and sample_param.get("defaultValue") is False,
+              f"{rel(path)}: DeploySampleAutomationRules must be a bool defaulting to false")
+    _context[0] = ""
 
 # --------------------------------------------------------------------------- import workflow
 

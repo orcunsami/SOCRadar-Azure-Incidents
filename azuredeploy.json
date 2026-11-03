@@ -152,6 +152,13 @@
             "metadata": {
                 "description": "Only used with IncidentMode=AlertBacked. true deploys the rule that raises an incident for every credential and botnet alarm (the largest group by volume). false disables it: those alarms stay in SOCRadar_Alarms_CL but get no incident. They are not picked up by the other rules."
             }
+        },
+        "DeploySampleAutomationRules": {
+            "type": "bool",
+            "defaultValue": false,
+            "metadata": {
+                "description": "Only used with IncidentMode=AlertBacked. true also deploys two example automation rules: one labels phishing incidents and raises their severity, one labels incidents whose alert carries a SuspiciousDomain custom detail. They are examples to copy from; leave false if you write your own."
+            }
         }
     },
     "variables": {
@@ -186,7 +193,9 @@
         "alertBackedPhishingRuleId": "[guid(variables('workspaceResourceId'), 'socradar-rule-phishing')]",
         "alertBackedCredentialRuleId": "[guid(variables('workspaceResourceId'), 'socradar-rule-credential')]",
         "alertBackedDataLeakRuleId": "[guid(variables('workspaceResourceId'), 'socradar-rule-data-leak')]",
-        "alertBackedVulnerabilityRuleId": "[guid(variables('workspaceResourceId'), 'socradar-rule-vulnerability')]"
+        "alertBackedVulnerabilityRuleId": "[guid(variables('workspaceResourceId'), 'socradar-rule-vulnerability')]",
+        "alertBackedSamplePhishingAutomationId": "[guid(variables('workspaceResourceId'), 'socradar-sample-automation-phishing')]",
+        "alertBackedSampleDomainAutomationId": "[guid(variables('workspaceResourceId'), 'socradar-sample-automation-suspicious-domain')]"
     },
     "resources": [
         {
@@ -4212,7 +4221,7 @@
                                 "description": "Raises one alert, and one incident, for every OPEN SOCRadar lookalike or phishing domain alarm in SOCRadar_Alarms_CL. The phishing domain is the DNS entity; the monitored asset is a custom detail, not an entity.",
                                 "severity": "Medium",
                                 "enabled": true,
-                                "query": "// One alert per alarm. The platform runs a rule about 6 minutes behind the clock, so an alert is\n// invisible to the very next run unless runs are far enough apart: runs are 10 minutes apart and a\n// row is held back until it is 12 minutes old, which lets the previous alert show up here first.\n// Alarms that already have an alert are dropped, so a late run cannot alert twice and an incident\n// closed by an analyst is not followed by a second one. Custom Details is a second, still-encoded\n// JSON string with 1-element arrays (live-measured). isfuzzy keeps the rule alive in a workspace\n// where SecurityAlert does not exist yet.\nlet Alerted = union isfuzzy=true (datatable(ExtendedProperties:string)[]), SecurityAlert\n| extend AlertedAlarmId = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])\n| where isnotempty(AlertedAlarmId)\n| distinct AlertedAlarmId;\nSOCRadar_Alarms_CL\n| where ingestion_time() > ago(1d)\n| where ingestion_time() < ago(12m)\n| where toupper(Status) == \"OPEN\"\n| where isnotempty(AlarmId)\n| join kind=leftanti Alerted on $left.AlarmId == $right.AlertedAlarmId\n| summarize arg_max(TimeGenerated, *) by AlarmId\n| extend AlarmUrl = strcat(\"https://platform.socradar.com/app/company/\", CompanyId, \"/alarm-management?tab=approved&field=alarmId&operator=equals&value=\", AlarmId)\n| extend SentinelSeverity = case(toupper(Severity) in (\"CRITICAL\", \"HIGH\"), \"High\", toupper(Severity) == \"MEDIUM\", \"Medium\", \"Low\")\n// One label per alarm: case() is first-match, and every rule carries this text byte for byte, so no\n// alarm is picked by two rules and a type that no branch names lands in \"Other\".\n| extend AlarmCategory = case(\n    (AlarmMainType =~ \"Brand Protection\" and AlarmSubType =~ \"Impersonating Domain\")\n      or (AlarmMainType =~ \"Phishing Domain\" and AlarmSubType =~ \"State Change\"), \"Phishing\",\n    AlarmMainType in~ (\"Vulnerability Monitoring\", \"Vulnerability Intelligence\"), \"Vulnerability\",\n    AlarmSubType in~ (\"Stolen Credentials On Dark Web Bot Market\", \"Black Market Botnet Detection\"), \"Credential\",\n    AlarmSubType in~ (\"PII Exposure\", \"Dark Web Suspicious Content\", \"IM Platform Suspicious Content\", \"Code Repository Data Leak\", \"Public Storage Leak\", \"Malware Analysis Service Monitoring\"), \"DataLeak\",\n    \"Other\")\n| where AlarmCategory == \"Phishing\"\n| extend MonitoredAsset = tostring(AlarmPayload['alarm_asset'])\n// The phishing domain is the only DNS entity; the monitored asset (the customer's own brand) is a\n// custom detail, never an entity. The domain comes from the \"Phishing Domain:\" line of the alarm text\n// (271 of 271 lookalike alarms in the research set), falling back to the phishing_domain payload key.\n// The import regex IoCDomain1 is alphabetical and a name server or other infrastructure host on 58% of\n// lookalike alarms, so it is not used here.\n| extend SuspiciousDomain = tolower(trim_end(@\"[.,;]+\", coalesce(extract(@\"Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)\", 1, AlarmText), tostring(AlarmPayload['phishing_domain']))))\n| extend SuspiciousDomainLabel = coalesce(SuspiciousDomain, \"n/a\")\n| extend SuspiciousIp = extract(@\"([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\", 1, tostring(AlarmPayload['ip_address']))\n| extend PhishingScore = tostring(AlarmPayload['score']), PhishingKeyword = tostring(AlarmPayload['phishing_keyword'])\n| extend IoCUrl1 = iff(IoCUrl1 has \"socradar.com\", \"\", IoCUrl1)\n| extend AlarmContent = pack('Suspicious Domain', SuspiciousDomain, 'Suspicious IP', SuspiciousIp, 'Score', PhishingScore, 'Asset', AlarmPayload['alarm_asset'], 'Tags', AlarmPayload['tags'])\n| mv-apply ContentKey = bag_keys(AlarmContent) to typeof(string) on (\n    extend RawValue = trim(@\"\\s\", replace_string(replace_string(tostring(AlarmContent[ContentKey]), \"\\r\", \"\"), \"\\n\", \" \"))\n    | where isnotempty(RawValue) and RawValue !in (\"[]\", \"{}\", \"null\", \"\\\"\\\"\")\n    | extend CellValue = case(\n        RawValue startswith \"[\\\"\", replace_string(replace_string(replace_string(replace_string(RawValue, \"[\\\"\", \"\"), \"\\\"]\", \"\"), \"\\\",\\\"\", \", \"), \"\\\"\", \"\"),\n        RawValue startswith \"{\\\"\" or RawValue startswith \"[{\", replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(RawValue, \"[{\", \"\"), \"}]\", \"\"), \"},{\", \" / \"), \"\\\",\\\"\", \"; \"), \"\\\":\\\"\", \": \"), \"\\\":\", \": \"), \"\\\",\", \"; \"), \",\\\"\", \"; \"), \"\\\"\", \"\"), \"{\", \"\"), \"}\", \"\"),\n        RawValue)\n    | summarize ContentRows = make_list(strcat(replace_string(ContentKey, \"_\", \" \"), \": \", iff(strlen(CellValue) > 160, strcat(substring(CellValue, 0, 160), \"...\"), CellValue))))\n| extend ContentMarkdown = iff(array_length(ContentRows) == 0, \"\", strcat(substring(strcat(\"Content:\\n\\n\", strcat_array(array_slice(ContentRows, 0, 5), \"\\n\\n\")), 0, 2600), \"\\n\\n\"))\n| extend DetailsMarkdown = trim(@\"\\s\", replace_string(replace_string(substring(AlarmText, 0, 1500), \"\\r\", \"\"), \"\\n\", \" \"))\n| extend DetailsMarkdown = strcat(substring(DetailsMarkdown, 0, 1500), iff(strlen(AlarmText) > 1500 or strlen(DetailsMarkdown) > 1500, \"...\", \"\"))\n| extend DescriptionBody = strcat(\"SOCRadar Alarm\\n\\nAlarm ID: \", AlarmId, \"\\n\\nMain Type: \", coalesce(AlarmMainType, \"N/A\"), \"\\n\\nSub Type: \", coalesce(AlarmSubType, \"N/A\"), \"\\n\\nSeverity: \", Severity, \"\\n\\nStatus: \", Status, \"\\n\\nCreated: \", AlarmDate, \"\\n\\nDetails:\\n\", coalesce(DetailsMarkdown, \"No details\"), \"\\n\\n\", ContentMarkdown, \"\\n\\nSOCRadar severity: \", toupper(Severity))\n| extend DescriptionLink = strcat(\"\\n\\nView in SOCRadar: \", AlarmUrl)\n| extend BodyBytes = strlen(base64_encode_tostring(DescriptionBody)) * 3 / 4, BodyBudget = 4800 - 2 * strlen(DescriptionLink)\n| extend AlarmDescription = strcat(iff(BodyBytes > BodyBudget, strcat(substring(DescriptionBody, 0, toint(strlen(DescriptionBody) * 1.0 * BodyBudget / BodyBytes) - 10), \"...\"), DescriptionBody), DescriptionLink)\n| extend AlarmDescription = iff(strlen(base64_encode_tostring(AlarmDescription)) * 3 / 4 > 4900, strcat(substring(DescriptionBody, 0, 1000), \"...\", DescriptionLink), AlarmDescription)\n| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText, AlarmDescription, AlarmMainType, AlarmSubType, Severity, Status, AlarmDate, AlarmUrl, SentinelSeverity, AlarmCategory, MonitoredAsset, SuspiciousDomain, SuspiciousDomainLabel, SuspiciousIp, PhishingScore, PhishingKeyword\n| order by TimeGenerated asc\n| take 149",
+                                "query": "// One alert per alarm. The platform runs a rule about 6 minutes behind the clock, so an alert is\n// invisible to the very next run unless runs are far enough apart: runs are 10 minutes apart and a\n// row is held back until it is 12 minutes old, which lets the previous alert show up here first.\n// Alarms that already have an alert are dropped, so a late run cannot alert twice and an incident\n// closed by an analyst is not followed by a second one. Custom Details is a second, still-encoded\n// JSON string with 1-element arrays (live-measured). isfuzzy keeps the rule alive in a workspace\n// where SecurityAlert does not exist yet.\nlet Alerted = union isfuzzy=true (datatable(ExtendedProperties:string)[]), SecurityAlert\n| extend AlertedAlarmId = tostring(parse_json(tostring(parse_json(tostring(ExtendedProperties))['Custom Details'])).AlarmId[0])\n| where isnotempty(AlertedAlarmId)\n| distinct AlertedAlarmId;\nSOCRadar_Alarms_CL\n| where ingestion_time() > ago(1d)\n| where ingestion_time() < ago(12m)\n| where toupper(Status) == \"OPEN\"\n| where isnotempty(AlarmId)\n| join kind=leftanti Alerted on $left.AlarmId == $right.AlertedAlarmId\n| summarize arg_max(TimeGenerated, *) by AlarmId\n| extend AlarmUrl = strcat(\"https://platform.socradar.com/app/company/\", CompanyId, \"/alarm-management?tab=approved&field=alarmId&operator=equals&value=\", AlarmId)\n| extend SentinelSeverity = case(toupper(Severity) in (\"CRITICAL\", \"HIGH\"), \"High\", toupper(Severity) == \"MEDIUM\", \"Medium\", \"Low\")\n// One label per alarm: case() is first-match, and every rule carries this text byte for byte, so no\n// alarm is picked by two rules and a type that no branch names lands in \"Other\".\n| extend AlarmCategory = case(\n    (AlarmMainType =~ \"Brand Protection\" and AlarmSubType =~ \"Impersonating Domain\")\n      or (AlarmMainType =~ \"Phishing Domain\" and AlarmSubType =~ \"State Change\"), \"Phishing\",\n    AlarmMainType in~ (\"Vulnerability Monitoring\", \"Vulnerability Intelligence\"), \"Vulnerability\",\n    AlarmSubType in~ (\"Stolen Credentials On Dark Web Bot Market\", \"Black Market Botnet Detection\"), \"Credential\",\n    AlarmSubType in~ (\"PII Exposure\", \"Dark Web Suspicious Content\", \"IM Platform Suspicious Content\", \"Code Repository Data Leak\", \"Public Storage Leak\", \"Malware Analysis Service Monitoring\"), \"DataLeak\",\n    \"Other\")\n| where AlarmCategory == \"Phishing\"\n| extend MonitoredAsset = tostring(AlarmPayload['alarm_asset'])\n// The phishing domain is the only DNS entity; the monitored asset (the customer's own brand) is a\n// custom detail, never an entity. The domain comes from the \"Phishing Domain:\" line of the alarm text\n// (254 of the 271 research alarms name one; 17 State Change alarms name none), falling back to the\n// phishing_domain payload key.\n// The import regex IoCDomain1 is alphabetical and a name server or other infrastructure host on 58% of\n// lookalike alarms, so it is not used here.\n| extend SuspiciousDomain = tolower(trim_end(@\"[.,;]+\", coalesce(extract(@\"Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)\", 1, AlarmText), tostring(AlarmPayload['phishing_domain']))))\n| extend SuspiciousDomainLabel = coalesce(SuspiciousDomain, \"n/a\")\n| extend SuspiciousIp = extract(@\"([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\", 1, tostring(AlarmPayload['ip_address']))\n| extend PhishingScore = tostring(AlarmPayload['score']), PhishingKeyword = tostring(AlarmPayload['phishing_keyword'])\n| extend IoCUrl1 = iff(IoCUrl1 has \"socradar.com\", \"\", IoCUrl1)\n| extend AlarmContent = pack('Suspicious Domain', SuspiciousDomain, 'Suspicious IP', SuspiciousIp, 'Score', PhishingScore, 'Asset', AlarmPayload['alarm_asset'], 'Tags', AlarmPayload['tags'])\n| mv-apply ContentKey = bag_keys(AlarmContent) to typeof(string) on (\n    extend RawValue = trim(@\"\\s\", replace_string(replace_string(tostring(AlarmContent[ContentKey]), \"\\r\", \"\"), \"\\n\", \" \"))\n    | where isnotempty(RawValue) and RawValue !in (\"[]\", \"{}\", \"null\", \"\\\"\\\"\")\n    | extend CellValue = case(\n        RawValue startswith \"[\\\"\", replace_string(replace_string(replace_string(replace_string(RawValue, \"[\\\"\", \"\"), \"\\\"]\", \"\"), \"\\\",\\\"\", \", \"), \"\\\"\", \"\"),\n        RawValue startswith \"{\\\"\" or RawValue startswith \"[{\", replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(replace_string(RawValue, \"[{\", \"\"), \"}]\", \"\"), \"},{\", \" / \"), \"\\\",\\\"\", \"; \"), \"\\\":\\\"\", \": \"), \"\\\":\", \": \"), \"\\\",\", \"; \"), \",\\\"\", \"; \"), \"\\\"\", \"\"), \"{\", \"\"), \"}\", \"\"),\n        RawValue)\n    | summarize ContentRows = make_list(strcat(replace_string(ContentKey, \"_\", \" \"), \": \", iff(strlen(CellValue) > 160, strcat(substring(CellValue, 0, 160), \"...\"), CellValue))))\n| extend ContentMarkdown = iff(array_length(ContentRows) == 0, \"\", strcat(substring(strcat(\"Content:\\n\\n\", strcat_array(array_slice(ContentRows, 0, 5), \"\\n\\n\")), 0, 2600), \"\\n\\n\"))\n| extend DetailsMarkdown = trim(@\"\\s\", replace_string(replace_string(substring(AlarmText, 0, 1500), \"\\r\", \"\"), \"\\n\", \" \"))\n| extend DetailsMarkdown = strcat(substring(DetailsMarkdown, 0, 1500), iff(strlen(AlarmText) > 1500 or strlen(DetailsMarkdown) > 1500, \"...\", \"\"))\n| extend DescriptionBody = strcat(\"SOCRadar Alarm\\n\\nAlarm ID: \", AlarmId, \"\\n\\nMain Type: \", coalesce(AlarmMainType, \"N/A\"), \"\\n\\nSub Type: \", coalesce(AlarmSubType, \"N/A\"), \"\\n\\nSeverity: \", Severity, \"\\n\\nStatus: \", Status, \"\\n\\nCreated: \", AlarmDate, \"\\n\\nDetails:\\n\", coalesce(DetailsMarkdown, \"No details\"), \"\\n\\n\", ContentMarkdown, \"\\n\\nSOCRadar severity: \", toupper(Severity))\n| extend DescriptionLink = strcat(\"\\n\\nView in SOCRadar: \", AlarmUrl)\n| extend BodyBytes = strlen(base64_encode_tostring(DescriptionBody)) * 3 / 4, BodyBudget = 4800 - 2 * strlen(DescriptionLink)\n| extend AlarmDescription = strcat(iff(BodyBytes > BodyBudget, strcat(substring(DescriptionBody, 0, toint(strlen(DescriptionBody) * 1.0 * BodyBudget / BodyBytes) - 10), \"...\"), DescriptionBody), DescriptionLink)\n| extend AlarmDescription = iff(strlen(base64_encode_tostring(AlarmDescription)) * 3 / 4 > 4900, strcat(substring(DescriptionBody, 0, 1000), \"...\", DescriptionLink), AlarmDescription)\n| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText, AlarmDescription, AlarmMainType, AlarmSubType, Severity, Status, AlarmDate, AlarmUrl, SentinelSeverity, AlarmCategory, MonitoredAsset, SuspiciousDomain, SuspiciousDomainLabel, SuspiciousIp, PhishingScore, PhishingKeyword\n| order by TimeGenerated asc\n| take 149",
                                 "queryFrequency": "PT10M",
                                 "queryPeriod": "P1D",
                                 "triggerOperator": "GreaterThan",
@@ -4701,6 +4710,103 @@
                                     }
                                 ]
                             }
+                        },
+                        {
+                            "type": "Microsoft.OperationalInsights/workspaces/providers/automationRules",
+                            "apiVersion": "2024-03-01",
+                            "name": "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/', variables('alertBackedSamplePhishingAutomationId'))]",
+                            "dependsOn": [
+                                "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces/providers/alertRules', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', variables('alertBackedPhishingRuleId'))]"
+                            ],
+                            "properties": {
+                                "displayName": "SOCRadar sample - phishing incidents: label and raise severity",
+                                "order": 2,
+                                "triggeringLogic": {
+                                    "isEnabled": true,
+                                    "triggersOn": "Incidents",
+                                    "triggersWhen": "Created",
+                                    "conditions": [
+                                        {
+                                            "conditionType": "Property",
+                                            "conditionProperties": {
+                                                "propertyName": "IncidentRelatedAnalyticRuleIds",
+                                                "operator": "Contains",
+                                                "propertyValues": [
+                                                    "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces/providers/alertRules', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', variables('alertBackedPhishingRuleId'))]"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "actions": [
+                                    {
+                                        "order": 1,
+                                        "actionType": "ModifyProperties",
+                                        "actionConfiguration": {
+                                            "severity": "High",
+                                            "labels": [
+                                                {
+                                                    "labelName": "SOCRadar-Phishing"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            "condition": "[parameters('DeploySampleAutomationRules')]"
+                        },
+                        {
+                            "type": "Microsoft.OperationalInsights/workspaces/providers/automationRules",
+                            "apiVersion": "2024-03-01",
+                            "name": "[concat(parameters('WorkspaceName'), '/Microsoft.SecurityInsights/', variables('alertBackedSampleDomainAutomationId'))]",
+                            "dependsOn": [
+                                "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces/providers/alertRules', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', variables('alertBackedPhishingRuleId'))]",
+                                "[resourceId(parameters('WorkspaceResourceGroup'), 'Microsoft.OperationalInsights/workspaces/providers/alertRules', parameters('WorkspaceName'), 'Microsoft.SecurityInsights', variables('alertBackedRuleId'))]"
+                            ],
+                            "properties": {
+                                "displayName": "SOCRadar sample - incidents with a suspicious domain: label",
+                                "order": 3,
+                                "triggeringLogic": {
+                                    "isEnabled": true,
+                                    "triggersOn": "Incidents",
+                                    "triggersWhen": "Created",
+                                    "conditions": [
+                                        {
+                                            "conditionType": "PropertyArray",
+                                            "conditionProperties": {
+                                                "arrayType": "CustomDetails",
+                                                "arrayConditionType": "AnyItem",
+                                                "itemConditions": [
+                                                    {
+                                                        "conditionType": "Property",
+                                                        "conditionProperties": {
+                                                            "propertyName": "IncidentCustomDetailsKey",
+                                                            "operator": "Equals",
+                                                            "propertyValues": [
+                                                                "SuspiciousDomain"
+                                                            ]
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "actions": [
+                                    {
+                                        "order": 1,
+                                        "actionType": "ModifyProperties",
+                                        "actionConfiguration": {
+                                            "labels": [
+                                                {
+                                                    "labelName": "SOCRadar-SuspiciousDomain"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            "condition": "[parameters('DeploySampleAutomationRules')]"
                         }
                     ]
                 }

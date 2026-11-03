@@ -129,6 +129,38 @@ def m_domain_regex_no_dot(t):
     r["properties"]["query"] = r["properties"]["query"].replace('Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)', 'Phishing Domain:\\s*([^\\s,;]+)')
 
 
+def samples(t):
+    nested = next(r for r in t["resources"] if r.get("name") == "deploy-alert-backed-rule")
+    return [r for r in nested["properties"]["template"]["resources"]
+            if r["type"].endswith("/automationRules") and "Sample" in r["name"]]
+
+
+def m_sample_unconditional(t):
+    for a in samples(t):
+        a.pop("condition", None)
+
+
+def m_sample_adds_socradar_label(t):
+    samples(t)[1]["properties"]["actions"][0]["actionConfiguration"]["labels"] = [{"labelName": "SOCRadar"}]
+
+
+def m_sample_phishing_severity(t):
+    samples(t)[0]["properties"]["actions"][0]["actionConfiguration"]["severity"] = "Low"
+
+
+def m_sample_phishing_any_rule(t):
+    conds = samples(t)[0]["properties"]["triggeringLogic"]["conditions"][0]["conditionProperties"]
+    conds["propertyValues"] = conds["propertyValues"] + [conds["propertyValues"][0].replace("alertBackedPhishingRuleId", "alertBackedRuleId")]
+
+
+def m_sample_key_changed(t):
+    samples(t)[1]["properties"]["triggeringLogic"]["conditions"][0]["conditionProperties"]["itemConditions"][0]["conditionProperties"]["propertyValues"] = ["AlarmId"]
+
+
+def m_samples_default_on(t):
+    t["parameters"]["DeploySampleAutomationRules"]["defaultValue"] = True
+
+
 def m_default_direct(t):
     t["parameters"]["IncidentMode"]["defaultValue"] = "Direct"
 
@@ -353,6 +385,23 @@ def m_domain_regex_greedy(t):
 
 
 MUTATIONS = [
+    ("severity column not projected", (ROOT, IMPORT), q_replace("SentinelSeverity, AlarmCategory", "AlarmCategory")),
+    ("time column not projected", (ROOT, IMPORT), q_replace("| project TimeGenerated, AlarmId", "| project AlarmId")),
+    ("company id not projected", (ROOT, IMPORT), q_replace("AlarmId, CompanyId, Title", "AlarmId, Title")),
+    ("alarm date not projected", (ROOT, IMPORT), q_replace("Status, AlarmDate, AlarmUrl", "Status, AlarmUrl")),
+    ("alarm text not projected", (ROOT, IMPORT), q_replace("Title, AlarmText, AlarmDescription", "Title, AlarmDescription")),
+    ("phishing domain fallback lost", (ROOT, IMPORT), q_replace("coalesce(extract(@\"Phishing Domain:", "strcat(extract(@\"Phishing Domain:")),
+    ("CVE priority swapped", (ROOT, IMPORT), q_replace("CveId = coalesce(tostring(AlarmPayload['cve_id']),", "CveId = strcat(tostring(AlarmPayload['cve_id']),")),
+    ("CVE in the alarm text not read", (ROOT, IMPORT), q_replace("extract(@\"(CVE-[0-9]{4}-[0-9]{4,})\", 1, AlarmText)", "''")),
+    ("affected domain keeps its case", (ROOT, IMPORT), q_replace("AffectedDomain = tolower(", "AffectedDomain = (")),
+    ("device country keeps the blank placeholder", (ROOT, IMPORT), q_replace("DeviceCountry = trim(@\"[\\s\\-]+\", ", "DeviceCountry = (")),
+    ("credential origin default renamed", (ROOT, IMPORT), q_replace('"Historical", "Other")', '"Historical", "Zother")')),
+    ("sample automation rules always deploy", (ROOT, IMPORT), m_sample_unconditional),
+    ("custom-detail sample adds the SOCRadar label", (ROOT, IMPORT), m_sample_adds_socradar_label),
+    ("phishing sample lowers severity", (ROOT, IMPORT), m_sample_phishing_severity),
+    ("phishing sample matches the catch-all too", (ROOT, IMPORT), m_sample_phishing_any_rule),
+    ("custom-detail sample keys on another detail", (ROOT, IMPORT), m_sample_key_changed),
+    ("samples default to on", (ROOT, IMPORT), m_samples_default_on),
     ("phishing domain regex accepts a word with no dot", (ROOT, IMPORT), m_domain_regex_no_dot),
     ("CVE regex wants 9 digits", (ROOT, IMPORT), q_replace("CVE-[0-9]{4}-[0-9]{4,}", "CVE-[0-9]{4}-[0-9]{9,}")),
     ("scanned asset reads only the ip key", (ROOT, IMPORT), q_replace("(?:ip|host)", "(?:ip)")),
