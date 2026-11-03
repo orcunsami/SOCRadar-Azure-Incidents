@@ -483,7 +483,9 @@ What is different in `AlertBacked`:
   now lists all five. An alarm the old rule alerted in its last run before the redeploy can be
   alerted once more by its new typed rule if that rule's first run comes before the first alert
   is readable (up to about 10 minutes; not measured on an upgrade), which opens a second incident.
-  Close it. Older versions: the rule is updated in place and
+  Close it. Rows written before the upgrade lack the payload keys the typed rules read (the
+  alarms DCR keeps them from the redeploy on), so for at most a day their typed entities and
+  custom details are empty. Older versions: the rule is updated in place and
   skips alarms whose earlier alert carries the `AlarmId` custom detail. An alarm the old rule
   alerted moments before the redeploy may still be alerted once more, and if its first incident
   was already closed that opens a second one. Not measured; close it, Sync handles both.

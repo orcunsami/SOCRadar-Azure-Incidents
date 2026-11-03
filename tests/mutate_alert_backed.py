@@ -103,7 +103,7 @@ def m_credential_copies_secret(t):
 
 def m_origin_by_machine_word(t):
     r, _ = rule(t)
-    r["properties"]["query"] = r["properties"]["query"].replace('Title has "Infected Machine" or Title has "Machine Information Found"', 'Title has "Machine"')
+    r["properties"]["query"] = r["properties"]["query"].replace('case(Title has "Employee", "Employee",', 'case(Title has "Machine", "InfectedMachine", Title has "Employee", "Employee",')
 
 
 def m_leak_url_any(t):
@@ -114,6 +114,19 @@ def m_leak_url_any(t):
 def m_query_too_long(t):
     r, _ = rule(t)
     r["properties"]["query"] += "\n// " + "x" * 3000
+
+
+def q_replace(old, new):
+    def mutate(t):
+        r, _ = rule(t)
+        r["properties"]["query"] = r["properties"]["query"].replace(old, new)
+    mutate.__doc__ = "rule(t): replace %r" % old[:40]
+    return mutate
+
+
+def m_domain_regex_no_dot(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)', 'Phishing Domain:\\s*([^\\s,;]+)')
 
 
 def m_default_direct(t):
@@ -326,7 +339,7 @@ def m_monitored_asset_dropped(t):
 def m_domain_from_payload_only(t):
     r, _ = rule(t)
     q = r["properties"]["query"]
-    r["properties"]["query"] = q.replace('extract(@"Phishing Domain:\\s*([^\\s,;]+)", 1, AlarmText)', '""')
+    r["properties"]["query"] = q.replace('extract(@"Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)", 1, AlarmText)', '""')
 
 
 def m_content_domain_from_payload(t):
@@ -336,10 +349,26 @@ def m_content_domain_from_payload(t):
 
 def m_domain_regex_greedy(t):
     r, _ = rule(t)
-    r["properties"]["query"] = r["properties"]["query"].replace('Phishing Domain:\\s*([^\\s,;]+)', 'Phishing Domain:\\s*(\\S+)')
+    r["properties"]["query"] = r["properties"]["query"].replace('Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)', 'Phishing Domain:\\s*(\\S+)')
 
 
 MUTATIONS = [
+    ("phishing domain regex accepts a word with no dot", (ROOT, IMPORT), m_domain_regex_no_dot),
+    ("CVE regex wants 9 digits", (ROOT, IMPORT), q_replace("CVE-[0-9]{4}-[0-9]{4,}", "CVE-[0-9]{4}-[0-9]{9,}")),
+    ("scanned asset reads only the ip key", (ROOT, IMPORT), q_replace("(?:ip|host)", "(?:ip)")),
+    ("IPv4 regex takes three octets", (ROOT, IMPORT), q_replace("(?:\\.[0-9]{1,3}){3}", "(?:\\.[0-9]{1,3}){2}")),
+    ("CVSS regex drops decimals", (ROOT, IMPORT), q_replace('"value":([0-9.]+)', '"value":([0-9]+)')),
+    ("blank trim keeps the hyphen placeholder", (ROOT, IMPORT), q_replace('@"[\\s\\-]+"', '@"[\\s]+"')),
+    ("machine info needs both machine and IP", (ROOT, IMPORT), q_replace("isnotempty(MachineName) or isnotempty(DeviceIp)", "isnotempty(MachineName) and isnotempty(DeviceIp)")),
+    ("trailing dot is not trimmed from the domain", (ROOT, IMPORT), q_replace('trim_end(@"[.,;]+", ', "(")),
+    ("matched assets dumped as JSON", (ROOT, IMPORT), q_replace('iff(gettype(AlarmPayload[\'matched_asset\']) == "array", strcat_array(AlarmPayload[\'matched_asset\'], ", "), tostring(AlarmPayload[\'matched_asset\']))', "tostring(AlarmPayload['matched_asset'])")),
+    ("PII channel renamed", (ROOT, IMPORT), q_replace('"PII Exposure", "PII"', '"PII Exposure", "Other"')),
+    ("leak link prefers the repository link", (ROOT, IMPORT), q_replace("coalesce(tostring(AlarmPayload['content_link']), tostring(AlarmPayload['source_link']), tostring(AlarmPayload['repository_url']))", "coalesce(tostring(AlarmPayload['repository_url']), tostring(AlarmPayload['content_link']), tostring(AlarmPayload['source_link']))")),
+    ("affected domain wants a 9 letter TLD", (ROOT, IMPORT), q_replace("[A-Za-z]{2,})", "[A-Za-z]{9,})")),
+    ("free text cap is 1200", (ROOT, IMPORT), q_replace(", 0, 120)", ", 0, 1200)")),
+    ("title label column not projected", (ROOT, IMPORT), q_replace("SuspiciousDomain, SuspiciousDomainLabel,", "SuspiciousDomain,")),
+    ("IoC IP column not projected", (ROOT, IMPORT), q_replace("| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText, AlarmDescription,", "| project TimeGenerated, AlarmId, CompanyId, Title, AlarmText,")),
+    ("description column not projected", (ROOT, IMPORT), q_replace("AlarmText, AlarmDescription, AlarmMainType", "AlarmText, AlarmMainType")),
     ("classifier drifts in one rule", (ROOT, IMPORT), m_classifier_drifts_in_one_rule),
     ("a pair is dropped from every typed list", (ROOT, IMPORT), m_pair_dropped_everywhere),
     ("catch-all gets a new rule id", (ROOT, IMPORT), m_catch_all_new_guid),
@@ -400,6 +429,7 @@ def main():
     total = 0
     for name, paths, mutate in MUTATIONS:
         scoped = "rule(t)" in inspect.getsource(mutate)
+        bit = 0
         for index in (range(len(CATS)) if scoped else [0]):
             TARGET[0] = index
             label = "%s [%s]" % (name, CATS[index]) if scoped else name
@@ -416,6 +446,7 @@ def main():
                 if not changed:
                     continue  # the mutation has nothing to bite on in this rule
                 total += 1
+                bit += 1
                 try:
                     result = subprocess.run([sys.executable, TEST], cwd=REPO, capture_output=True, text=True,
                                             timeout=60, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
@@ -431,6 +462,9 @@ def main():
                 blind.append(label)
             else:
                 print("caught %-52s" % label)
+        if bit == 0:
+            print("STALE  %-52s the mutation changes nothing: its target text is gone" % name)
+            blind.append(name + " (stale)")
     print("\nblind: %d of %d" % (len(blind), total))
     return 1 if blind else 0
 

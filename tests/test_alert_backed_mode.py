@@ -80,7 +80,7 @@ FIXTURE = [
     ("Supply Chain Intelligence", "Security Incidents", "Other"),
     ("Deep&Dark Web Monitoring", "A Sub Type SOCRadar Adds Next Year", "Other"),
     ("A New Main Type", "Anything", "Other"),
-    # the same sub type under two main types must not be classified on the sub type alone
+    # the same sub type exists under two main types and is a credential under both
     ("Some Other Main Type", "Stolen Credentials On Dark Web Bot Market", "Credential"),
 ]
 
@@ -169,12 +169,29 @@ def classify(query, main, sub):
     return "Other"
 
 
-def origin_of(query, title):
+def origin_of(query, title, main="Deep&Dark Web Monitoring"):
+    """Evaluate the CredentialOrigin case() of the query (has = word match, =~ = case-insensitive equality)."""
     line = re.search(r"\| extend CredentialOrigin = case\((.*)\)\n", query).group(1)
-    for cond, label in re.findall(r'((?:Title has "[^"]+"(?: or )?)+), "(\w+)"', line):
-        if any(w.lower() in title.lower() for w in re.findall(r'Title has "([^"]+)"', cond)):
+    words = re.findall(r"[\w&]+", title.lower())
+    for cond, label in re.findall(r'(.*?),\s*"(\w+)"(?:,|$)', line):
+        expr = re.sub(r'Title has "([^"]+)"',
+                      lambda m: "(%r in ' '.join(words))" % " ".join(re.findall(r"[\w&]+", m.group(1).lower())), cond)
+        expr = re.sub(r'AlarmMainType =~ "([^"]+)"', lambda m: "(main.lower() == %r)" % m.group(1).lower(), expr)
+        if eval(" ".join(expr.split()), {}, {"words": words, "main": main}):
             return label
     return "Other"
+
+
+def kql_regex(query, arg):
+    """The regex literal of the extract() whose input is `arg`."""
+    m = re.search(r'extract\(@"([^"]+)", 1, ' + re.escape(arg), query) or \
+        re.search(r"extract\(@'([^']+)', 1, " + re.escape(arg), query)
+    return m.group(1) if m else None
+
+
+def kql_trim(pattern_literal, text):
+    """KQL trim(regex, text): strip a match of the regex from both ends."""
+    return re.sub(r"(?:%s)$" % pattern_literal, "", re.sub(r"^(?:%s)" % pattern_literal, "", text))
 
 
 # --------------------------------------------------------------------------- ARM level
@@ -391,7 +408,8 @@ if root_nested:
         if cat in ("Phishing", "Other"):
             check("pack('Suspicious Domain', SuspiciousDomain," in query,
                   "the Content block must show the extracted phishing domain first, not the payload key")
-            check('extract(@"Phishing Domain:\\s*([^\\s,;]+)", 1, AlarmText)' in query
+            check('extract(@"Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)", 1, AlarmText)' in query
+                  and 'trim_end(@"[.,;]+",' in query
                   and "tostring(AlarmPayload['phishing_domain'])" in query and "SuspiciousDomain = tolower(" in query,
                   "SuspiciousDomain must come from the 'Phishing Domain:' line of the alarm text (payload key as fallback)")
             check(cat != "Phishing" or ("SuspiciousDomainLabel = coalesce(SuspiciousDomain, \"n/a\")" in query
@@ -407,10 +425,13 @@ if root_nested:
                 for text, want in (("Phishing Domain: foo.com,bar.com Score: 80", "foo.com"),
                                    ("Phishing Domain: a.example;b.example x", "a.example"),
                                    ("Phishing Domain: evil-example.com Score: 1", "evil-example.com"),
-                                   ("Phishing Domain: evil-example.com. Score: 1", "evil-example.com.")):
+                                   ("Phishing Domain: evil-example.com. Score: 1", "evil-example.com."),
+                                   # 17 of 60 real State Change alarms start like this: no domain, a change label
+                                   ("Phishing Domain: Favicon Hash Old Value: 123 New Value: 456", None),
+                                   ("Phishing Domain: Content Old Value: a New Value: b", None)):
                     hit = re.search(dom_re, text)
-                    check(hit is not None and hit.group(1) == want,
-                          f"Phishing Domain regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+                    got = hit.group(1) if hit else None
+                    check(got == want, f"Phishing Domain regex on {text!r} gave {got!r}, want {want!r}")
         elif cat != "Other":
             check("SuspiciousDomain" not in query,
                   "only the phishing rule and the catch-all may derive a suspicious domain")
@@ -418,16 +439,77 @@ if root_nested:
             # The exposed credential is third-party personal data: it must never be copied into an alert.
             check("credential_details" not in query and "username" not in query,
                   "the credential rule must not read the exposed credential itself")
-            for text, want in (("Customer Credential - No Machine Information", "Customer"),
-                               ("Employee Credential in Combolists", "Employee"),
-                               ("Machine Information Found for Previously Leaked Credential", "InfectedMachine"),
-                               ("Compromised Customer Credential from Infected Machine", "InfectedMachine"),
-                               ("Possible Employee Account for Sale in Russian Blackmarket", "Employee"),
-                               ("VPN Account", "VPN")):
-                check(origin_of(query, text) == want, f"CredentialOrigin of {text!r} must be {want}")
+            # CredentialOrigin says WHO the credential belongs to; whether a machine is known is
+            # HasMachineInfo. A machine word in the title must not change the origin.
+            for text, main, want in (("Customer Credential - No Machine Information", "Deep&Dark Web Monitoring", "Customer"),
+                                     ("Employee Credential in Combolists", "Deep&Dark Web Monitoring", "Employee"),
+                                     ("Compromised Employee Credential from Infected Machine Detected in Dark Market", "Deep&Dark Web Monitoring", "Employee"),
+                                     ("Compromised Customer Credential from Infected Machine Detected in Dark Market", "Deep&Dark Web Monitoring", "Customer"),
+                                     ("Machine Information Found for Previously Leaked Credential", "Botnet", "Botnet"),
+                                     ("Possible Employee Account for Sale in Russian Blackmarket", "Deep&Dark Web Monitoring", "Employee"),
+                                     ("Historical Botnet Intelligence", "Deep&Dark Web Monitoring", "Historical"),
+                                     ("VPN Account", "Deep&Dark Web Monitoring", "VPN"),
+                                     ("Something New", "Deep&Dark Web Monitoring", "Other")):
+                check(origin_of(query, text, main) == want, f"CredentialOrigin of {text!r} must be {want}")
+            check("HasMachineInfo = tostring(isnotempty(MachineName) or isnotempty(DeviceIp))" in query,
+                  "HasMachineInfo is true when either the machine or its IP is known")
+            for arg, cases in (("tostring(AlarmPayload['device_ip'])",
+                                (("198.51.100.23", "198.51.100.23"), ("198.51.100.23, 10.0.0.1", "198.51.100.23"),
+                                 ("203.0.113.9:8080", "203.0.113.9"), ("", None), ("1.2.3", None), ("-", None))),):
+                rx = kql_regex(query, arg)
+                for text, want in cases:
+                    hit = re.search(rx, text) if rx else None
+                    check((hit.group(1) if hit else None) == want, f"DeviceIp regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+            trim_pat = re.search(r"MachineName = trim\(@\"([^\"]+)\"", query)
+            check(trim_pat is not None, "MachineName must be trimmed")
+            if trim_pat:
+                for text, want in (("-", ""), (" WS-TEST-01 ", "WS-TEST-01"), ("DESKTOP-ABC", "DESKTOP-ABC"), ("", "")):
+                    check(kql_trim(trim_pat.group(1), text) == want, f"MachineName trim of {text!r} must be {want!r}")
+            check(query.count("substring(MalwareFamily, 0, 120)") == 1 and query.count("substring(AssetMatch, 0, 120)") == 1,
+                  "free-text custom details must be capped at 120 characters (2 KB per alert)")
         if cat == "DataLeak":
             check('LeakUrl startswith "http" and LeakUrl !has "socradar.com"' in query,
                   "the leak entity must be a real link and never a SOCRadar platform link")
+            check("LeakUrl = coalesce(tostring(AlarmPayload['content_link']), tostring(AlarmPayload['source_link']), "
+                  "tostring(AlarmPayload['repository_url']))" in query,
+                  "the leak link is the first of content link, source link, repository link")
+            check('iff(gettype(AlarmPayload[\'matched_asset\']) == "array", strcat_array(AlarmPayload[\'matched_asset\'], ", "), '
+                  "tostring(AlarmPayload['matched_asset']))" in query, "matched assets arrive as a list and must be joined, not dumped as JSON")
+            for sub, want in (("Code Repository Data Leak", "CodeRepo"), ("Dark Web Suspicious Content", "DarkWeb"),
+                              ("IM Platform Suspicious Content", "IM"), ("Public Storage Leak", "Storage"), ("PII Exposure", "PII")):
+                check(f'AlarmSubType =~ "{sub}", "{want}"' in query, f"LeakChannel must map {sub} to {want}")
+            for field in ("LeakSource", "AttackType", "MatchedAsset"):
+                check(f"{field} = substring({field}, 0, 120)" in query, f"{field} must be capped at 120 characters")
+        if cat == "Phishing":
+            rx = kql_regex(query, "tostring(AlarmPayload['ip_address'])")
+            for text, want in (("203.0.113.7", "203.0.113.7"), ("203.0.113.7, 198.51.100.1", "203.0.113.7"), ("1.2", None), ("", None)):
+                hit = re.search(rx, text) if rx else None
+                check((hit.group(1) if hit else None) == want, f"SuspiciousIp regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+        if cat == "Vulnerability":
+            cve = kql_regex(query, "RelatedEntities")
+            for text, want in (('[{"key":"CVE","value":"CVE-2026-12345"}]', "CVE-2026-12345"), ("CVE-2026-123", None), ("no cve", None)):
+                hit = re.search(cve, text) if cve else None
+                check((hit.group(1) if hit else None) == want, f"CVE regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+            asset = kql_regex(query, "RelatedAssets")
+            for text, want in (('[{"key":"host","value":"192.0.2.10"}]', "192.0.2.10"), ('[{"key":"ip","value":"192.0.2.11"}]', "192.0.2.11"),
+                               ('[{"key":"host","value":"3com.example.test"}]', None), ('[{"key":"port","value":443}]', None)):
+                hit = re.search(asset, text) if asset else None
+                check((hit.group(1) if hit else None) == want, f"scanned-asset regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+            cvss = re.search(r"extract\(@'(\"key\":\"CVSS\"[^']+)', 1, RelatedEntities", query)
+            check(cvss is not None and re.search(cvss.group(1), '[{"key":"CVSS","value":7.5}]').group(1) == "7.5",
+                  "CVSS must be read from the related entities, decimals included")
+            ip = kql_regex(query, "tostring(AlarmPayload['ip_address'])")
+            for text, want in (("192.0.2.10:443", "192.0.2.10"), ("192.0.2.10", "192.0.2.10"), ("", None)):
+                hit = re.search(ip, text) if ip else None
+                check((hit.group(1) if hit else None) == want, f"AffectedIp regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+            dom = kql_regex(query, "tostring(AlarmPayload['domains'])")
+            for text, want in (('["host.example.test"]', "host.example.test"), ("[]", None), ('["a-b.example.co.uk"]', "a-b.example.co.uk")):
+                hit = re.search(dom, text) if dom else None
+                check((hit.group(1) if hit else None) == want, f"AffectedDomain regex on {text!r} gave {hit.group(1) if hit else None!r}, want {want!r}")
+            check("AffectedSoftware = substring(AffectedSoftware, 0, 120)" in query, "AffectedSoftware must be capped at 120 characters")
+            soft = re.search(r'AffectedSoftware = trim\(@"([^"]+)"', query)
+            check(soft is not None and kql_trim(soft.group(1), "-") == "" and kql_trim(soft.group(1), " Apache ") == "Apache",
+                  "AffectedSoftware must drop the '-' blank so it never shows as a value")
 
         grouping = props.get("incidentConfiguration", {}).get("groupingConfiguration", {})
         check(props.get("incidentConfiguration", {}).get("createIncident") is True, "rule must create incidents")
@@ -456,6 +538,10 @@ if root_nested:
         missing = columns - declared - derived
         check(not missing, f"rule query projects columns the alarms table does not have: {sorted(missing)}")
         check(set(details.values()) <= columns, "every custom detail must be a projected column")
+        mapped = {m["fieldMappings"][0]["columnName"] for m in mappings}
+        check(mapped <= columns, f"every entity column must be projected: {sorted(mapped - columns)}")
+        used = set(re.findall(r"\{\{(\w+)\}\}", override.get("alertDisplayNameFormat", "") + override.get("alertDescriptionFormat", "")))
+        check(used <= columns, f"every title/description placeholder must be projected, or the alert reverts to the default text: {sorted(used - columns)}")
 
         # ARM would read a string that starts with [ and ends with ] as an expression, and the
         # Content Hub packaging tool escapes such strings (EXP-AZURE-0161). None may exist here.
@@ -493,7 +579,7 @@ if root_nested:
             REPO, "Playbooks", "SOCRadar-Alarms-Infrastructure", "azuredeploy.json"))["resources"]
             if r["type"] == "Microsoft.Insights/dataCollectionRules" and "AlarmsDcrName" in r["name"])
         check(dcr_kql == infra_kql, "the alarms DCR transform differs between azuredeploy.json and the infrastructure template")
-        kept = set(re.findall(r"'(\w+)', AlarmPayload\[", dcr_kql))
+        kept = set(re.findall(r"'(\w+)', (?:substring\(tostring\()?AlarmPayload\[", dcr_kql))
         for cat, q in queries.items():
             used = set(re.findall(r"AlarmPayload\['(\w+)'\]", q))
             check(used <= kept, f"{cat} rule reads payload keys the DCR transform drops: {sorted(used - kept)}")
