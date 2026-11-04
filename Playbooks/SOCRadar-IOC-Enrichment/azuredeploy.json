@@ -196,7 +196,7 @@
                         },
                         "Extract_Alarm_Id": {
                             "type": "Compose",
-                            "inputs": "@if(contains(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#'), split(split(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#')[1], ' ')[0], '')",
+                            "inputs": "@split(split(concat(coalesce(triggerBody()?['object']?['properties']?['title'], ''), '#'), '#')[1], ' ')[0]",
                             "runAfter": {
                                 "Init_Failed": [
                                     "Succeeded"

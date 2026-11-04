@@ -3055,7 +3055,7 @@
                                                                 "runAfter": {},
                                                                 "inputs": {
                                                                     "method": "PUT",
-                                                                    "uri": "@{parameters('ManagementBaseUrl')}/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada7-0000-4000-8000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2024-10-01-preview",
+                                                                    "uri": "@{parameters('ManagementBaseUrl')}/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada8-0000-4000-8000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2024-10-01-preview",
                                                                     "headers": {
                                                                         "Content-Type": "application/json"
                                                                     },
@@ -3092,7 +3092,7 @@
                                                                 },
                                                                 "inputs": {
                                                                     "method": "PUT",
-                                                                    "uri": "@{parameters('ManagementBaseUrl')}@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
+                                                                    "uri": "@{parameters('ManagementBaseUrl')}@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada8-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
                                                                     "headers": {
                                                                         "Content-Type": "application/json"
                                                                     },
