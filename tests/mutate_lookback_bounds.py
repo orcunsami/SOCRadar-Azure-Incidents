@@ -36,9 +36,18 @@ for label, rel, old, new in MUTATIONS:
             blind += 1
             continue
         open(path, "w", encoding="utf-8").write(text.replace(old, new, 1))
-        result = subprocess.run([sys.executable, TEST], cwd=work, capture_output=True, text=True)
-        if result.returncode == 0:
+        try:
+            result = subprocess.run([sys.executable, TEST], cwd=work, capture_output=True, text=True, timeout=60)
+            code = result.returncode
+            # Only the test's own "FAIL:" lines count as caught: a traceback also exits non-zero.
+            banner = code == 1 and result.stdout.startswith("FAIL:")
+        except subprocess.TimeoutExpired:
+            code, banner = 124, False
+        if code == 0:
             print(f"  BLIND {label}")
+            blind += 1
+        elif not banner:
+            print(f"  CRASH {label}: the test died (rc {code}) without its FAIL line")
             blind += 1
         else:
             print(f"  caught {label}")

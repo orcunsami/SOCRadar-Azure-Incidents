@@ -555,10 +555,13 @@ def main():
                     continue  # the mutation has nothing to bite on in this rule
                 total += 1
                 bit += 1
+                failed = False
                 try:
                     result = subprocess.run([sys.executable, TEST], cwd=REPO, capture_output=True, text=True,
                                             timeout=60, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
                     rc = result.returncode
+                    # Only the test's own failure banner counts as caught: a traceback or a timeout also exits non-zero.
+                    failed = rc == 1 and "ALERT-BACKED MODE CHECK FAILED" in result.stdout
                 except subprocess.TimeoutExpired:
                     rc = 124
             finally:
@@ -568,6 +571,9 @@ def main():
             if rc == 0:
                 print("BLIND  %-52s test still passed" % label)
                 blind.append(label)
+            elif not failed:
+                print("CRASH  %-52s the test died (rc %d) without its failure banner" % (label, rc))
+                blind.append(label + " (crash)")
             else:
                 print("caught %-52s" % label)
         if bit == 0:

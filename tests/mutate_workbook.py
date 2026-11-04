@@ -61,14 +61,22 @@ def main():
                 print("STALE  %-44s the edit changes nothing" % name)
                 blind.append(name + " (stale)")
                 continue
-            rc = subprocess.run([sys.executable, TEST], cwd=REPO, capture_output=True, text=True, timeout=60,
-                                env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1")).returncode
+            try:
+                done = subprocess.run([sys.executable, TEST], cwd=REPO, capture_output=True, text=True, timeout=60,
+                                      env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                rc = done.returncode
+                # Only the test's own failure banner counts as caught: a traceback also exits non-zero.
+                crashed = rc != 0 and not (rc == 1 and "WORKBOOK CHECK FAILED" in done.stdout)
+            except subprocess.TimeoutExpired:
+                rc, crashed = 124, True
         finally:
             for p, text in originals.items():
                 open(p, "w", encoding="utf-8").write(text)
-        print(("BLIND  " if rc == 0 else "caught ") + "%-44s" % name)
+        print(("BLIND  " if rc == 0 else "CRASH  " if crashed else "caught ") + "%-44s" % name)
         if rc == 0:
             blind.append(name)
+        elif crashed:
+            blind.append(name + " (crash)")
     print("\nblind: %d of %d" % (len(blind), len(MUTATIONS)))
     return 1 if blind else 0
 

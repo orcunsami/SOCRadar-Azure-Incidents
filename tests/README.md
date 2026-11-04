@@ -20,6 +20,9 @@ shape and never runs a workflow action.
 | `mutate_daily_rescan.py` | Breaks the rescan in 10 ways in both template copies; the rescan test must fail each one |
 | `test_lookback_bounds.py` | `InitialLookbackMinutes` is bounded 10 to 10080 in the combined template and the standalone import playbook, the default sits inside, and 10080 is the clamp in `Determine_Lookback` |
 | `mutate_lookback_bounds.py` | Moves each bound and the clamp in both template copies (6 mutations); the bounds test must fail each one |
+| `test_workbook.py` | The workbook renders, its alert stand-in is guarded and its joins give one row per alarm and incident |
+| `mutate_workbook.py` | Breaks the workbook in 11 ways in both template copies; the workbook test must fail each one with its own failure line |
+| `mutate_alert_backed.py` | Breaks the alert-backed mode in every rule and both template copies; the alert-backed test must fail each one with its own failure line, a crash counts as blind |
 | `test_severity_sync_logic.py` | The severity write-back can only raise a severity, is gated by `SyncSeverity`, is judged by `is_success`, and that both label builders carry the labels Sync reads |
 | `test_management_base_url.py` | No template hardcodes the public-cloud ARM host |
 | `test_hunting_queries.py` | Every column the hunting queries read is one the deployment creates |
