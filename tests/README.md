@@ -23,11 +23,12 @@ shape and never runs a workflow action.
 | `test_workbook.py` | The workbook renders, its alert stand-in is guarded and its joins give one row per alarm and incident |
 | `mutate_workbook.py` | Breaks the workbook in 11 ways in both template copies; the workbook test must fail each one with its own failure line |
 | `mutate_alert_backed.py` | Breaks the alert-backed mode in every rule and both template copies; the alert-backed test must fail each one with its own failure line, a crash counts as blind |
+| `mutate_import_integrity.py` | Breaks the no-IoC marker and the IoC playbook's alarm-id reader in 13 ways; the integrity test must fail each one with its own failure summary |
 | `test_severity_sync_logic.py` | The severity write-back can only raise a severity, is gated by `SyncSeverity`, is judged by `is_success`, and that both label builders carry the labels Sync reads |
 | `test_management_base_url.py` | No template hardcodes the public-cloud ARM host |
 | `test_hunting_queries.py` | Every column the hunting queries read is one the deployment creates |
 | `test_cross_rg_roles.py` | The cross-RG nested role assignments grant the import identity the same elevated role the same-RG path grants, so IoC enrichment does not silently 403 when the workspace lives in another resource group |
-| `test_import_integrity.py` | The import cannot lose alarms or duplicate incidents silently |
+| `test_import_integrity.py` | The import cannot lose alarms or duplicate incidents silently, the backfill marks an alarm it found empty so it is not re-read every run, and both alarm-id readers take the first `#` segment |
 | `test_incident_dedup.py` | Every `SecurityIncident` query collapses to the newest version of each incident |
 | `test_incident_dedup_projection.py` | The existing-incident page is projected to the fields its consumers read |
 | `test_domain_tld_whitelist.py` | Domain entities are matched against real country codes, not any two letters |

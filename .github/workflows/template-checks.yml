@@ -134,6 +134,9 @@ jobs:
       - name: Alert-backed test catches every deliberate break
         run: python3 tests/mutate_alert_backed.py
 
+      - name: Import integrity test catches every deliberate break
+        run: python3 tests/mutate_import_integrity.py
+
       - name: No secrets in tracked files
         run: |
           set -e

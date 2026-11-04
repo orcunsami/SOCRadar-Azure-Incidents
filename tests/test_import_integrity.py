@@ -15,6 +15,12 @@ each guard is pinned here so a later edit cannot quietly take it away.
       segment as soon as the alarm's own title contains a '#'. The other reader already
       used [1].
   S5  Sync's status write had no else branch, so a refusal from SOCRadar left no trace.
+  S6  The backfill picks incidents with no bookmark, and an alarm with no IoC never gets one,
+      so the same 60 incidents were re-read on every run. The backfill now writes an
+      entity-less bookmark for an alarm it read and found empty, and only for that case:
+      a failed read must stay unmarked so the next run retries it.
+  S7  The IoC playbook read the alarm id with last(split(title, '#')), the same wrong-segment
+      bug as S4, in a different file.
 
 Run:  python3 tests/test_import_integrity.py
 """
@@ -98,7 +104,61 @@ for path in (ROOT, IMPORT):
               f"which is the wrong alarm id when the title contains a '#'")
         check("For_Each_Missing_Entity')?['properties']?['title'], ''), '#')[1]" in blob,
               f"{rel(path)}: the backfill no longer reads the alarm id from the title")
+        # S6 -----------------------------------------------------------------------
+        flt = json.dumps(acts.get("Filter_Incidents_Missing_Entities", {}).get("inputs", {}))
+        check("['bookmarksCount'], 0), 0)" in flt,
+              f"{rel(path)}: the backfill no longer skips incidents that already have a bookmark, "
+              f"so the no-IoC marker would not stop the re-selection")
+
+        def find(node, name):
+            if isinstance(node, dict):
+                if name in node and isinstance(node[name], dict):
+                    return node[name]
+                for v in node.values():
+                    r = find(v, name)
+                    if r is not None:
+                        return r
+            elif isinstance(node, list):
+                for v in node:
+                    r = find(v, name)
+                    if r is not None:
+                        return r
+            return None
+
+        has = find(acts.get("Backfill_Missing_Entities"), "BF_Check_Has_Entities")
+        guard = ((has or {}).get("else") or {}).get("actions", {}).get("BF_Check_Alarm_Was_Read")
+        check(guard is not None,
+              f"{rel(path)}: an alarm with no IoC is never marked, so it is re-read on every run")
+        if guard:
+            cond = json.dumps(guard.get("expression", {}))
+            check("body('Fetch_Backfill_Alarm')" in cond and "'data'" in cond and "greater" in cond,
+                  f"{rel(path)}: the no-IoC marker is not conditioned on the alarm having been read")
+            inner = guard.get("actions", {})
+            mark = inner.get("BF_Create_NoIoC_Bookmark", {})
+            rel_act = inner.get("BF_Relate_NoIoC_Bookmark", {})
+            body = mark.get("inputs", {}).get("body", {}).get("properties", {})
+            check(mark.get("inputs", {}).get("method") == "PUT" and body.get("entityMappings") == [],
+                  f"{rel(path)}: the marker must be an entity-less bookmark")
+            check("/bookmarks/50c8ada7-0000-4000-8000-" in mark.get("inputs", {}).get("uri", ""),
+                  f"{rel(path)}: the marker bookmark id is not the per-alarm id the IoC bookmark uses")
+            check("/relations/50c8ada7-0000-4000-9000-" in rel_act.get("inputs", {}).get("uri", "")
+                  and "BF_Create_NoIoC_Bookmark" in json.dumps(rel_act.get("runAfter", {})),
+                  f"{rel(path)}: the marker is never related to the incident, so bookmarksCount stays 0")
+            check("Failed" not in json.dumps(rel_act.get("runAfter", {})),
+                  f"{rel(path)}: a failed marker write must not be swallowed")
     check(found, f"{rel(path)}: no import workflow found - the test is looking in the wrong place")
+
+IOC = os.path.join(REPO, "Playbooks", "SOCRadar-IOC-Enrichment", "azuredeploy.json")
+found = False
+for dfn in workflows(IOC):
+    found = True
+    expr = json.dumps(dfn.get("actions", {}).get("Extract_Alarm_Id", {}).get("inputs", ""))
+    # S7 -----------------------------------------------------------------------------
+    check("last(split(" not in expr,
+          f"{rel(IOC)}: the IoC playbook still takes the LAST '#' segment of the title")
+    check("'#')[1]" in expr,
+          f"{rel(IOC)}: the IoC playbook no longer reads the alarm id from the title")
+check(found, f"{rel(IOC)}: no workflow found")
 
 for path in (ROOT, SYNC):
     found = False

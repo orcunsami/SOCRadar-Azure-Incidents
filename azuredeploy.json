@@ -3035,7 +3035,89 @@
                                                 }
                                             },
                                             "else": {
-                                                "actions": {}
+                                                "actions": {
+                                                    "BF_Check_Alarm_Was_Read": {
+                                                        "type": "If",
+                                                        "runAfter": {},
+                                                        "expression": {
+                                                            "and": [
+                                                                {
+                                                                    "greater": [
+                                                                        "@length(coalesce(body('Fetch_Backfill_Alarm')?['data'], json('[]')))",
+                                                                        0
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
+                                                        "actions": {
+                                                            "BF_Create_NoIoC_Bookmark": {
+                                                                "type": "Http",
+                                                                "runAfter": {},
+                                                                "inputs": {
+                                                                    "method": "PUT",
+                                                                    "uri": "@{parameters('ManagementBaseUrl')}/subscriptions/@{parameters('SubscriptionId')}/resourceGroups/@{parameters('ResourceGroupName')}/providers/Microsoft.OperationalInsights/workspaces/@{parameters('WorkspaceName')}/providers/Microsoft.SecurityInsights/bookmarks/50c8ada7-0000-4000-8000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2024-10-01-preview",
+                                                                    "headers": {
+                                                                        "Content-Type": "application/json"
+                                                                    },
+                                                                    "authentication": {
+                                                                        "type": "ManagedServiceIdentity",
+                                                                        "audience": "@{parameters('ManagementBaseUrl')}"
+                                                                    },
+                                                                    "body": {
+                                                                        "properties": {
+                                                                            "displayName": "SOCRadar #@{outputs('Extract_Backfill_Alarm_Id')} - No IoC entities found",
+                                                                            "query": "print AlarmId = '@{outputs('Extract_Backfill_Alarm_Id')}'",
+                                                                            "labels": [
+                                                                                "SOCRadar",
+                                                                                "Auto-IoC-None"
+                                                                            ],
+                                                                            "notes": "The IoC backfill read this alarm and found no IP, domain or URL indicators in its Details and Content fields. This bookmark marks the incident as checked so the backfill does not select it again.",
+                                                                            "eventTime": "@{utcNow()}",
+                                                                            "entityMappings": []
+                                                                        }
+                                                                    },
+                                                                    "retryPolicy": {
+                                                                        "type": "exponential",
+                                                                        "count": 3,
+                                                                        "interval": "PT10S"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "BF_Relate_NoIoC_Bookmark": {
+                                                                "type": "Http",
+                                                                "runAfter": {
+                                                                    "BF_Create_NoIoC_Bookmark": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "inputs": {
+                                                                    "method": "PUT",
+                                                                    "uri": "@{parameters('ManagementBaseUrl')}@{items('For_Each_Missing_Entity')?['id']}/relations/50c8ada7-0000-4000-9000-@{substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)}?api-version=2023-11-01",
+                                                                    "headers": {
+                                                                        "Content-Type": "application/json"
+                                                                    },
+                                                                    "authentication": {
+                                                                        "type": "ManagedServiceIdentity",
+                                                                        "audience": "@{parameters('ManagementBaseUrl')}"
+                                                                    },
+                                                                    "body": {
+                                                                        "properties": {
+                                                                            "relatedResourceId": "@{body('BF_Create_NoIoC_Bookmark')?['id']}"
+                                                                        }
+                                                                    },
+                                                                    "retryPolicy": {
+                                                                        "type": "exponential",
+                                                                        "count": 3,
+                                                                        "interval": "PT10S"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        "else": {
+                                                            "actions": {}
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
