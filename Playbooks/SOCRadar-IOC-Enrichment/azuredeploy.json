@@ -33,7 +33,7 @@
             "type": "string",
             "defaultValue": "",
             "metadata": {
-                "description": "SOCRadar Company ID. Used to fetch the original alarm's related entities from SOCRadar for incidents created by SOCRadar-Alarm-Import (which carry no Sentinel entities). Leave empty to enrich only Sentinel-provided entities."
+                "description": "SOCRadar Company ID. Used to fetch the original alarm's related entities from SOCRadar for incidents created by SOCRadar-Alarm-Import (which carry no Microsoft Sentinel entities). Leave empty to enrich only Microsoft Sentinel-provided entities."
             }
         },
         "WorkspaceName": {
