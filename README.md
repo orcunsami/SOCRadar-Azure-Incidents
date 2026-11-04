@@ -459,12 +459,27 @@ and after that date they have no portal to be seen in.
 | Incident in the Azure portal | yes | yes, until 31 March 2027 |
 | Entities (alarm link, IP, phishing domain, URL) | on the alert, filled when the incident is created | bookmark based, Azure portal only |
 | Custom details (`AlarmId`, `AlarmMainType`, `AlarmSubType`, `SocradarSeverity`, `AlarmStatus`, `SuspiciousDomain`, `MonitoredAsset`) | on the alert, usable in automation rules | none |
-| Incident delay after the alarm is imported | typically 20 to 30 minutes, measured 19 to 28 (the rule waits 12 minutes) | within the polling interval |
+| Incident delay after the alarm is imported | typically 20 to 30 minutes, measured 19 to 30 (the rule waits 12 minutes) | within the polling interval |
 | Description | plain text (Defender shows it raw) | markdown |
 
 Measured on a workspace connected to Defender: an incident closed in the Defender portal
 reached Microsoft Sentinel in about 6 seconds, and Sync wrote the closure back to SOCRadar and put the `Synced`
 label on the incident. Defender may rename an incident when its correlation merges alerts.
+
+Finding the incident in Defender:
+
+- The workspace has to be connected to the Defender portal. Microsoft documents automatic
+  onboarding for new Microsoft Sentinel customers set up by a subscription Owner or User Access
+  Administrator. In our tenant, which was already onboarded, a workspace created by this template
+  also showed up as a secondary workspace without a manual step. If it is not listed, connect it
+  in **System > Settings > Microsoft Sentinel > Workspaces**.
+- On the incident in the Azure portal, **Investigate in Microsoft Defender XDR** opens the same
+  incident as a case in Defender. In the Defender **Cases** list, search for the alarm id; the
+  list is sorted by priority, so a new incident is not necessarily at the top.
+- The alarm text is on the alert: open the case, then **Alerts**, then the alert. The side panel
+  lists the custom details; **Open alert page** shows the full description under **What happened**.
+- Automation rules, including the samples, are under **Microsoft Sentinel > Configuration >
+  Automation** in the Defender portal (per Microsoft documentation; not measured on this product).
 
 What is different in `AlertBacked`:
 
@@ -518,7 +533,7 @@ What is different in `AlertBacked`:
   detail). In the live test a closed incident was not followed by a second one for the same
   alarm. If the previous alert is ever not visible yet, the duplicate alert joins the same
   incident (grouping is by `AlarmId`). The cost is delay: in the live test an incident showed up
-  20 to 30 minutes after the import (measured 19 to 28), not 3 to 11. An
+  20 to 30 minutes after the import (measured 19 to 30), not 3 to 11. An
   alarm stays eligible for a day after it is written; if the rule does not run for longer than
   that, the alarm never gets an alert.
 - Upgrading a single-rule `AlertBacked` install to the five rules: the old rule keeps its id and
