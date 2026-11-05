@@ -503,8 +503,13 @@ incidents are scored Low (measured 4 and 5), so that filter shows no case. Click
 include **Low priority** in the filter, then search for `SOCRadar`. To keep the view, save the
 filter with **Filter set > Save**.
 
-Defender scores an incident from its MITRE tactics, and an incident with no tactics gets the
-lowest score (measured: 1). Every rule, `Other alarms` included, therefore carries tactics.
+Defender scores an incident from its MITRE tactics and techniques. An incident with no tactics gets
+the lowest score (measured: 1), and tactics alone did not raise it (measured with tactics only: 1).
+Every rule, `Other alarms` included, therefore carries both.
+
+A rule's own `techniques` do not reach the incident when the rule uses a tactics column, so
+`Other alarms` maps the techniques per alarm as well (`AlarmTechniques`, passed with
+`alertDynamicProperties`); the rule still lists its fallback techniques.
 
 What is different in `AlertBacked`:
 

@@ -74,7 +74,7 @@ BLOCK_PINS = {
         "48425d0e9a53ae6118d9"
     ],
     "Other": [
-        "d47c9bd45aca971c2a0d",
+        "9a8193c5d97555e5aeaa",
         "7a348b91825745a0217f"
     ]
 }
@@ -220,13 +220,13 @@ TACTICS_EXPECTED = {
 }
 
 
-def tactics_of(query, main):
-    """Evaluate the AlarmTactics case() the catch-all really carries."""
-    body = re.search(r"\| extend AlarmTactics = case\(\n(.*?)\n    \"Reconnaissance\"\)", query, re.S)
+def _case_of(query, column, last_default, main):
+    """Evaluate a one-column case() over AlarmMainType that the catch-all really carries."""
+    body = re.search(r"\| extend %s = case\(\n(.*?)\n    %s\)" % (column, re.escape(last_default)), query, re.S)
     if body is None:
         return None
     for line in body.group(1).split("\n"):
-        hit = re.fullmatch(r'\s*(.+), "([A-Za-z,]+)",', line)
+        hit = re.fullmatch(r'\s*(.+), ([\'"])([A-Za-z0-9,\[\]"]+)\2,', line)
         if hit is None:
             return None
         expr = re.sub(r'(\w+) =~ "([^"]+)"', lambda m: f'({m.group(1)}.lower() == {m.group(2).lower()!r})', hit.group(1))
@@ -234,8 +234,32 @@ def tactics_of(query, main):
                       lambda m: f'({m.group(1)}.lower() in {[x.strip().strip(chr(34)).lower() for x in m.group(2).split(chr(34) + ", " + chr(34))]!r})',
                       expr)
         if eval(expr, {}, {"AlarmMainType": main}):
-            return hit.group(2)
-    return "Reconnaissance"
+            return hit.group(3)
+    return last_default.strip("\"'")
+
+
+def tactics_of(query, main):
+    """Evaluate the AlarmTactics case() the catch-all really carries."""
+    return _case_of(query, "AlarmTactics", '"Reconnaissance"', main)
+
+
+def techniques_of(query, main):
+    """Evaluate the AlarmTechniques case() (a JSON array string, returned here as a comma list)."""
+    raw = _case_of(query, "AlarmTechniques", "'[\"T1595\",\"T1596\"]'", main)
+    if raw is None or not (raw.startswith('["') and raw.endswith('"]')):
+        return None  # a comma list left the alert's Techniques empty in the live test: it has to be a JSON array
+    return ",".join(json.loads(raw))
+
+
+# What the catch-all must label each main type's techniques with (the Push repo's tacticsMap).
+TECHNIQUES_EXPECTED = {
+    "Attack Surface Management": "T1595,T1596", "Executive Protection": "T1589,T1593",
+    "Industry Attacks Monitoring": "T1591", "Internet Asset Inventory Monitoring": "T1595", "VIP Protection": "T1589",
+    "Botnet": "T1555,T1056", "Deep&Dark Web Monitoring": "T1555,T1110", "Configuration Weakness": "T1190",
+    "Fraud Protection": "T1566", "Supply Chain Intelligence": "T1195",
+    "Brand Protection": "T1583,T1566", "Domain": "T1583,T1566", "Phishing Domain": "T1583,T1566",
+    "Surface Web Monitoring": "T1593,T1567", "Threat Hunting": "T1566,T1071", "A New Main Type": "T1595,T1596",
+}
 
 
 def origin_of(query, title, main="Deep&Dark Web Monitoring"):
@@ -649,11 +673,24 @@ if root_nested:
                 check(bool(set((got or "").split(",")) & rule_tactics),
                       f"AlarmTactics of {main!r} shares no tactic with the rule's fallback set {sorted(rule_tactics)}")
             check(tactics_of(query, "x") == "Reconnaissance", "an unknown main type must default to Reconnaissance")
+            # Techniques: Defender scores an incident from tactics and techniques, and a rule's own techniques
+            # do not reach the incident once a tactics column is used, so the column carries them.
+            check(override.get("alertDynamicProperties") == [{"alertProperty": "Techniques", "value": "AlarmTechniques"}]
+                  and "AlarmTechniques" in columns,
+                  "the catch-all must map the projected AlarmTechniques column to the Techniques alert property")
+            for main, want in TECHNIQUES_EXPECTED.items():
+                got = techniques_of(query, main)
+                check(got == want, f"AlarmTechniques of {main!r} is {got!r}, want {want!r}")
+                tactic_set = set((tactics_of(query, main) or "").split(","))
+                for technique in (got or "").split(","):
+                    check(bool(TECHNIQUE_TACTICS.get(technique, set()) & tactic_set),
+                          f"{technique} on {main!r} belongs to {sorted(TECHNIQUE_TACTICS.get(technique, []))}, not to its tactics {sorted(tactic_set)}")
+            check(techniques_of(query, "x") == "T1595,T1596", "an unknown main type must get the Reconnaissance techniques")
             for main, sub, want in FIXTURE:
                 if want == "Other":
                     check(bool(tactics_of(query, main)), f"({main}, {sub}) reaches the catch-all and needs a tactic")
         else:
-            check("alertTacticsColumnName" not in override and "AlarmTactics" not in query,
+            check("alertTacticsColumnName" not in override and "alertDynamicProperties" not in override and "AlarmTactics" not in query,
                   f"the {cat} rule has a fixed tactic set and must not use the dynamic tactics column")
         block = query[query.index("| extend MonitoredAsset"):query.index("| extend IoCUrl1")]
         pack_line = re.search(r"\| extend AlarmContent = pack\(.*", query).group(0)

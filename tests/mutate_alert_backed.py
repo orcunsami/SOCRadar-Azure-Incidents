@@ -453,7 +453,7 @@ def m_rule_tactic_dropped_for_technique(t):
 
 def m_tactics_column_not_projected(t):
     r, _ = rule(t)
-    r["properties"]["query"] = r["properties"]["query"].replace("AlarmCategory, AlarmTactics, MonitoredAsset", "AlarmCategory, MonitoredAsset")
+    r["properties"]["query"] = r["properties"]["query"].replace("AlarmCategory, AlarmTactics, AlarmTechniques, MonitoredAsset", "AlarmCategory, AlarmTechniques, MonitoredAsset")
 
 
 def m_tactics_branch_dropped(t):
@@ -470,6 +470,38 @@ def m_tactics_column_on_typed_rule(t):
     r, _ = rule(t)
     if "AlarmTactics" not in r["properties"]["query"]:
         r["properties"]["alertDetailsOverride"]["alertTacticsColumnName"] = "AlarmTactics"
+
+
+def m_techniques_property_dropped(t):
+    r, _ = rule(t)
+    r["properties"]["alertDetailsOverride"].pop("alertDynamicProperties", None)
+
+
+def m_techniques_column_renamed(t):
+    r, _ = rule(t)
+    d = r["properties"]["alertDetailsOverride"]
+    if "alertDynamicProperties" in d:
+        d["alertDynamicProperties"][0]["value"] = "AlarmTechnique"
+
+
+def m_technique_wrong_tactic(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("AlarmMainType =~ \"Botnet\", '[\"T1555\",\"T1056\"]'", "AlarmMainType =~ \"Botnet\", '[\"T1555\",\"T1567\"]'")
+
+
+def m_techniques_not_projected(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("AlarmTactics, AlarmTechniques, MonitoredAsset", "AlarmTactics, MonitoredAsset")
+
+
+def m_techniques_branch_dropped(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("    AlarmMainType =~ \"Threat Hunting\", '[\"T1566\",\"T1071\"]',\n", "")
+
+
+def m_techniques_comma_list(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("'[\"T1566\",\"T1071\"]'", '"T1566,T1071"')
 
 
 MUTATIONS = [
@@ -573,6 +605,12 @@ MUTATIONS = [
     ("a main type loses its tactics branch", (ROOT, IMPORT), m_tactics_branch_dropped),
     ("a main type gets the wrong tactic", (ROOT, IMPORT), m_tactics_wrong_for_type),
     ("typed rule starts reading the tactics column", (ROOT, IMPORT), m_tactics_column_on_typed_rule),
+    ("catch-all no longer maps AlarmTechniques to the alert", (ROOT, IMPORT), m_techniques_property_dropped),
+    ("technique mapping points at a misspelt column", (ROOT, IMPORT), m_techniques_column_renamed),
+    ("a main type gets a technique of another tactic", (ROOT, IMPORT), m_technique_wrong_tactic),
+    ("AlarmTechniques not projected", (ROOT, IMPORT), m_techniques_not_projected),
+    ("techniques written as a comma list again (alert Techniques stays empty)", (ROOT, IMPORT), m_techniques_comma_list),
+    ("a main type loses its techniques branch", (ROOT, IMPORT), m_techniques_branch_dropped),
 ]
 
 
