@@ -481,6 +481,13 @@ Finding the incident in Defender:
 - Automation rules, including the samples, are under **Microsoft Sentinel > Configuration >
   Automation** in the Defender portal (per Microsoft documentation; not measured on this product).
 
+#### Viewing incidents in Microsoft Defender
+
+The Cases or Incidents list may open with a **Priority score** filter of 15 to 100. SOCRadar
+incidents are scored Low (measured 4 and 5), so that filter shows no case. Click **Reset all** or
+include **Low priority** in the filter, then search for `SOCRadar`. To keep the view, save the
+filter with **Filter set > Save**.
+
 What is different in `AlertBacked`:
 
 - The alarms table is deployed whatever `EnableAlarmsTable` says, and the workspace has to be in
