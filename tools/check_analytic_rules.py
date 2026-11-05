@@ -42,11 +42,29 @@ KQL_WORDS = {
 # Techniques used by this repo, mapped to their ATT&CK tactics. Azure rejects a
 # rule whose technique has no matching tactic, with an error that names neither.
 TECHNIQUE_TACTICS = {
+    "T1056": {"Collection", "CredentialAccess"},
+    "T1071": {"CommandAndControl"},
     "T1078": {"DefenseEvasion", "Persistence", "PrivilegeEscalation", "InitialAccess"},
+    "T1110": {"CredentialAccess"},
+    "T1190": {"InitialAccess"},
+    "T1195": {"InitialAccess"},
     "T1485": {"Impact"},
     "T1526": {"Discovery"},
+    "T1555": {"CredentialAccess"},
+    "T1566": {"InitialAccess"},
     "T1567": {"Exfiltration"},
+    "T1583": {"ResourceDevelopment"},
     "T1589": {"Reconnaissance"},
+    "T1591": {"Reconnaissance"},
+    "T1593": {"Reconnaissance"},
+    "T1595": {"Reconnaissance"},
+    "T1596": {"Reconnaissance"},
+}
+
+VALID_TACTICS = {
+    "Reconnaissance", "ResourceDevelopment", "InitialAccess", "Execution", "Persistence",
+    "PrivilegeEscalation", "DefenseEvasion", "CredentialAccess", "Discovery", "LateralMovement",
+    "Collection", "Exfiltration", "CommandAndControl", "Impact",
 }
 
 # SOCRadar sends risk levels uppercase; the import playbook passes them through
@@ -156,6 +174,42 @@ def check_rule(path, schemas):
     return problems
 
 
+def arm_alert_rules(node):
+    """Scheduled rules the one-click template deploys (nested inside the playbook deployments)."""
+    if isinstance(node, dict):
+        if node.get("type") == "Microsoft.OperationalInsights/workspaces/providers/alertRules":
+            yield node["properties"]
+        for value in node.values():
+            yield from arm_alert_rules(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from arm_alert_rules(value)
+
+
+def check_arm_rules():
+    """Same technique/tactic gate for the alert-backed rules inside azuredeploy.json."""
+    with open(os.path.join(ROOT, "azuredeploy.json")) as handle:
+        template = json.load(handle)
+    problems = []
+    rules = list(arm_alert_rules(template))
+    for props in rules:
+        name = props.get("displayName", "?")
+        tactics = set(props.get("tactics", []))
+        if not tactics:
+            problems.append(f"{name}: tactics is empty; Defender scores an incident without tactics at 1")
+        if not tactics <= VALID_TACTICS:
+            problems.append(f"{name}: unknown tactic {sorted(tactics - VALID_TACTICS)}")
+        if len(tactics) > 5:
+            problems.append(f"{name}: {len(tactics)} tactics; a rule takes at most 5")
+        for technique in props.get("techniques", []):
+            expected = TECHNIQUE_TACTICS.get(technique)
+            if expected is None:
+                problems.append(f"{name}: {technique} has no tactic mapping here")
+            elif not (expected & tactics):
+                problems.append(f"{name}: {technique} needs one of {sorted(expected)}, tactics lists {sorted(tactics)}")
+    return rules, problems
+
+
 def main():
     schemas = custom_table_schemas()
     if not schemas:
@@ -176,6 +230,13 @@ def main():
                 print(f"  {problem}")
         else:
             print(f"{name}: ok")
+    arm_rules, arm_problems = check_arm_rules()
+    for problem in arm_problems:
+        print(f"azuredeploy.json: {problem}")
+    if arm_problems or not arm_rules:
+        failed = True
+    else:
+        print(f"azuredeploy.json: {len(arm_rules)} alert-backed rule(s) ok (tactics, techniques)")
     if failed:
         return 1
     print(f"{len(paths)} rule(s) checked against {len(schemas)} custom table schema(s).")

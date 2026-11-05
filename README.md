@@ -406,13 +406,28 @@ alarm.
 | `SOCRadar - Credential exposure` | stolen credentials on dark web bot markets, botnet, blackmarket botnet | machine name (Host), device IP | `CredentialOrigin`, `HasMachineInfo`, `MachineName`, `DeviceIp`, `DeviceCountry`, `MalwareFamily`, `AssetMatch` | CredentialAccess |
 | `SOCRadar - Data leak and PII exposure` | code repository, dark web, IM platform, public storage, PII, malware analysis service | the leak location (URL) | `LeakChannel`, `LeakSource`, `LeakUrl`, `AttackType`, `MatchedAsset` | Reconnaissance, Exfiltration |
 | `SOCRadar - Vulnerability and CVE` | vulnerability monitoring and vulnerability intelligence | affected IP, affected domain | `CveId`, `CvssScore`, `AffectedSoftware`, `AffectedIp`, `AffectedDomain` | Reconnaissance, InitialAccess |
-| `SOCRadar - Other alarms` | everything else, including any type SOCRadar adds later | first IP and URL found in the alarm, the phishing domain if the text names one | `SuspiciousDomain` | none |
+| `SOCRadar - Other alarms` | everything else, including any type SOCRadar adds later | first IP and URL found in the alarm, the phishing domain if the text names one | `SuspiciousDomain` | by main type, see below (Reconnaissance when the type is unknown) |
 
 The shared custom details are `AlarmId`, `AlarmMainType`, `AlarmSubType`, `SocradarSeverity`,
 `AlarmStatus`, `AlarmCategory` (which rule took it) and `MonitoredAsset` (your asset or brand
 label from the alarm; never an entity, except on vulnerability alarms where the affected asset
 is what has to be fixed). Severity comes from SOCRadar for every rule. VIP alarms have no rule of
 their own: SOCRadar's alarm data held none to base one on, so they fall into `Other alarms`.
+
+`Other alarms` takes many main types, so its tactics come from the alarm: the query adds an
+`AlarmTactics` column and the rule passes it to the alert (`alertTacticsColumnName`). The rule
+itself also lists a fallback set (Reconnaissance, ResourceDevelopment, InitialAccess,
+CredentialAccess, Exfiltration), used when the column is empty. Same list as the SOCRadar
+Sentinel Push solution.
+
+| Main type | Tactics |
+|---|---|
+| Attack Surface Management, Executive Protection, Industry Attacks Monitoring, Internet Asset Inventory Monitoring, VIP Protection, any type not listed here | Reconnaissance |
+| Botnet, Deep&Dark Web Monitoring (sub types no typed rule takes) | CredentialAccess |
+| Configuration Weakness, Fraud Protection, Supply Chain Intelligence | InitialAccess |
+| Brand Protection, Domain, Phishing Domain (sub types no typed rule takes) | ResourceDevelopment, InitialAccess |
+| Surface Web Monitoring | Reconnaissance, Exfiltration |
+| Threat Hunting | InitialAccess, CommandAndControl |
 
 The credential rule is the largest by volume. `EnableCredentialRule=false` switches it off: those
 alarms stay in `SOCRadar_Alarms_CL` (hunting queries and the workbook still see them) but get no
@@ -488,6 +503,9 @@ incidents are scored Low (measured 4 and 5), so that filter shows no case. Click
 include **Low priority** in the filter, then search for `SOCRadar`. To keep the view, save the
 filter with **Filter set > Save**.
 
+Defender scores an incident from its MITRE tactics, and an incident with no tactics gets the
+lowest score (measured: 1). Every rule, `Other alarms` included, therefore carries tactics.
+
 What is different in `AlertBacked`:
 
 - The alarms table is deployed whatever `EnableAlarmsTable` says, and the workspace has to be in
@@ -544,7 +562,7 @@ What is different in `AlertBacked`:
   alarm stays eligible for a day after it is written; if the rule does not run for longer than
   that, the alarm never gets an alert.
 - Upgrading a single-rule `AlertBacked` install to the five rules: the old rule keeps its id and
-  becomes `Other alarms`; four new rules are added next to it, and the labeling automation rule
+  becomes `Other alarms` (and now carries MITRE tactics; a redeploy updates the rule in place); four new rules are added next to it, and the labeling automation rule
   now lists all five. An alarm the old rule alerted in its last run before the redeploy can be
   alerted once more by its new typed rule if that rule's first run comes before the first alert
   is readable (up to about 10 minutes; not measured on an upgrade), which opens a second incident.

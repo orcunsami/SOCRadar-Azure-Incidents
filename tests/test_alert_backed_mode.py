@@ -74,7 +74,7 @@ BLOCK_PINS = {
         "48425d0e9a53ae6118d9"
     ],
     "Other": [
-        "a91b068dbc27ebc9d6f4",
+        "d47c9bd45aca971c2a0d",
         "7a348b91825745a0217f"
     ]
 }
@@ -206,6 +206,36 @@ def classify(query, main, sub):
         if eval(expr, {}, {"AlarmMainType": main, "AlarmSubType": sub}):
             return label
     return "Other"
+
+
+# What the catch-all must label each main type with (the Push repo's tacticsMap for the types that reach it).
+TACTICS_EXPECTED = {
+    "Attack Surface Management": "Reconnaissance", "Executive Protection": "Reconnaissance",
+    "Industry Attacks Monitoring": "Reconnaissance", "Internet Asset Inventory Monitoring": "Reconnaissance",
+    "VIP Protection": "Reconnaissance", "Botnet": "CredentialAccess", "Deep&Dark Web Monitoring": "CredentialAccess",
+    "Configuration Weakness": "InitialAccess", "Fraud Protection": "InitialAccess", "Supply Chain Intelligence": "InitialAccess",
+    "Brand Protection": "ResourceDevelopment,InitialAccess", "Domain": "ResourceDevelopment,InitialAccess",
+    "Phishing Domain": "ResourceDevelopment,InitialAccess", "Surface Web Monitoring": "Reconnaissance,Exfiltration",
+    "Threat Hunting": "InitialAccess,CommandAndControl", "A New Main Type": "Reconnaissance",
+}
+
+
+def tactics_of(query, main):
+    """Evaluate the AlarmTactics case() the catch-all really carries."""
+    body = re.search(r"\| extend AlarmTactics = case\(\n(.*?)\n    \"Reconnaissance\"\)", query, re.S)
+    if body is None:
+        return None
+    for line in body.group(1).split("\n"):
+        hit = re.fullmatch(r'\s*(.+), "([A-Za-z,]+)",', line)
+        if hit is None:
+            return None
+        expr = re.sub(r'(\w+) =~ "([^"]+)"', lambda m: f'({m.group(1)}.lower() == {m.group(2).lower()!r})', hit.group(1))
+        expr = re.sub(r'(\w+) in~ \(([^)]*)\)',
+                      lambda m: f'({m.group(1)}.lower() in {[x.strip().strip(chr(34)).lower() for x in m.group(2).split(chr(34) + ", " + chr(34))]!r})',
+                      expr)
+        if eval(expr, {}, {"AlarmMainType": main}):
+            return hit.group(2)
+    return "Reconnaissance"
 
 
 def origin_of(query, title, main="Deep&Dark Web Monitoring"):
@@ -600,6 +630,31 @@ if root_nested:
         for needed in ("TimeGenerated", "AlarmId", "CompanyId", "AlarmText", "AlarmDate", "AlarmDescription",
                        override.get("alertSeverityColumnName", "SentinelSeverity")):
             check(needed in columns, f"the projection must keep {needed}")
+        # Defender prices an incident by MITRE tactics alone (empty -> priority 1). The catch-all has no fixed
+        # tactic, so each alert takes its own from the main type, and the rule keeps a union as the fallback.
+        if cat == "Other":
+            check(override.get("alertTacticsColumnName") == "AlarmTactics" and "AlarmTactics" in columns,
+                  "the catch-all must pass a projected AlarmTactics column as alertTacticsColumnName")
+            rule_tactics = set(props.get("tactics", []))
+            check(0 < len(rule_tactics) <= 5 and props.get("techniques"),
+                  "the catch-all keeps a fallback set of 1-5 tactics and its techniques; empty tactics score 1 in Defender")
+            sys.path.insert(0, os.path.join(REPO, "tools"))
+            from check_analytic_rules import TECHNIQUE_TACTICS
+            for technique in props.get("techniques", []):
+                check(bool(TECHNIQUE_TACTICS.get(technique, set()) & rule_tactics),
+                      f"{technique} needs one of {sorted(TECHNIQUE_TACTICS.get(technique, []))} in the catch-all's tactics; Azure rejects the rule otherwise")
+            for main, want in TACTICS_EXPECTED.items():
+                got = tactics_of(query, main)
+                check(got == want, f"AlarmTactics of {main!r} is {got!r}, want {want!r}")
+                check(bool(set((got or "").split(",")) & rule_tactics),
+                      f"AlarmTactics of {main!r} shares no tactic with the rule's fallback set {sorted(rule_tactics)}")
+            check(tactics_of(query, "x") == "Reconnaissance", "an unknown main type must default to Reconnaissance")
+            for main, sub, want in FIXTURE:
+                if want == "Other":
+                    check(bool(tactics_of(query, main)), f"({main}, {sub}) reaches the catch-all and needs a tactic")
+        else:
+            check("alertTacticsColumnName" not in override and "AlarmTactics" not in query,
+                  f"the {cat} rule has a fixed tactic set and must not use the dynamic tactics column")
         block = query[query.index("| extend MonitoredAsset"):query.index("| extend IoCUrl1")]
         pack_line = re.search(r"\| extend AlarmContent = pack\(.*", query).group(0)
         got_pin = [hashlib.sha256(block.encode()).hexdigest()[:20], hashlib.sha256(pack_line.encode()).hexdigest()[:20]]

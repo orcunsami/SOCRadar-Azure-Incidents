@@ -434,6 +434,44 @@ def m_domain_regex_greedy(t):
     r["properties"]["query"] = r["properties"]["query"].replace('Phishing Domain:\\s*([^\\s,;]+\\.[^\\s,;]+)', 'Phishing Domain:\\s*(\\S+)')
 
 
+def m_tactics_column_unset(t):
+    r, _ = rule(t)
+    r["properties"]["alertDetailsOverride"].pop("alertTacticsColumnName", None)
+
+
+def m_rule_tactics_emptied(t):
+    r, _ = rule(t)
+    if "AlarmTactics" in r["properties"]["query"]:
+        r["properties"]["tactics"] = []
+
+
+def m_rule_tactic_dropped_for_technique(t):
+    r, _ = rule(t)
+    if "AlarmTactics" in r["properties"]["query"]:
+        r["properties"]["tactics"] = [x for x in r["properties"]["tactics"] if x != "Exfiltration"]
+
+
+def m_tactics_column_not_projected(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace("AlarmCategory, AlarmTactics, MonitoredAsset", "AlarmCategory, MonitoredAsset")
+
+
+def m_tactics_branch_dropped(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('    AlarmMainType =~ "Surface Web Monitoring", "Reconnaissance,Exfiltration",\n', "")
+
+
+def m_tactics_wrong_for_type(t):
+    r, _ = rule(t)
+    r["properties"]["query"] = r["properties"]["query"].replace('("Botnet", "Deep&Dark Web Monitoring"), "CredentialAccess"', '("Botnet", "Deep&Dark Web Monitoring"), "Discovery"')
+
+
+def m_tactics_column_on_typed_rule(t):
+    r, _ = rule(t)
+    if "AlarmTactics" not in r["properties"]["query"]:
+        r["properties"]["alertDetailsOverride"]["alertTacticsColumnName"] = "AlarmTactics"
+
+
 MUTATIONS = [
     ("severity column not projected", (ROOT, IMPORT), q_replace("SentinelSeverity, AlarmCategory", "AlarmCategory")),
     ("time column not projected", (ROOT, IMPORT), q_replace("| project TimeGenerated, AlarmId", "| project AlarmId")),
@@ -528,6 +566,13 @@ MUTATIONS = [
     ("rule runs every 5 minutes again", (ROOT, IMPORT), m_five_minute_runs),
     ("alerted-AlarmId read uses the flat shape", (ROOT, IMPORT), m_dedup_flat_custom_details),
     ("IoC column reads wrong index", (ROOT, IMPORT), m_ioc_column_wrong_index),
+    ("catch-all tactics column no longer passed to the alert", (ROOT, IMPORT), m_tactics_column_unset),
+    ("catch-all fallback tactics emptied", (ROOT, IMPORT), m_rule_tactics_emptied),
+    ("catch-all keeps a technique without its tactic", (ROOT, IMPORT), m_rule_tactic_dropped_for_technique),
+    ("AlarmTactics not projected", (ROOT, IMPORT), m_tactics_column_not_projected),
+    ("a main type loses its tactics branch", (ROOT, IMPORT), m_tactics_branch_dropped),
+    ("a main type gets the wrong tactic", (ROOT, IMPORT), m_tactics_wrong_for_type),
+    ("typed rule starts reading the tactics column", (ROOT, IMPORT), m_tactics_column_on_typed_rule),
 ]
 
 
