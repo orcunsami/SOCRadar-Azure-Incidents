@@ -503,13 +503,17 @@ incidents are scored Low (measured 4 and 5), so that filter shows no case. Click
 include **Low priority** in the filter, then search for `SOCRadar`. To keep the view, save the
 filter with **Filter set > Save**.
 
-Defender scores an incident from its MITRE tactics and techniques. An incident with no tactics gets
-the lowest score (measured: 1), and tactics alone did not raise it (measured with tactics only: 1).
-Every rule, `Other alarms` included, therefore carries both.
+Defender scores an incident partly from its MITRE tactics and techniques, so every rule,
+`Other alarms` included, carries both. Measured on 6 synthetic `Other alarms` alerts (6 Nov 2026,
+workspace connected to Defender): with tactics only, all 6 incidents scored 1; with tactics and
+techniques, 5 of 6 scored 2 to 4 (Threat Hunting stayed at 1), all in the Low band (below 15). The
+score is Defender's own and not documented, so read these numbers as one measurement.
 
 A rule's own `techniques` do not reach the incident when the rule uses a tactics column, so
 `Other alarms` maps the techniques per alarm as well (`AlarmTechniques`, passed with
-`alertDynamicProperties`); the rule still lists its fallback techniques.
+`alertDynamicProperties`); the rule still lists its fallback techniques. `AlarmTechniques` has to be
+a JSON array string such as `'["T1555","T1056"]'`: a comma list leaves the alert's `Techniques`
+silently empty.
 
 What is different in `AlertBacked`:
 
