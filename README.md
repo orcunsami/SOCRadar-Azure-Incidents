@@ -4,6 +4,8 @@ Bidirectional integration between SOCRadar and Microsoft Sentinel. Alarms come i
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Forcunsami%2FSOCRadar-Azure-Incidents%2Fmaster%2Fazuredeploy.json)
 
+Step-by-step guide with screenshots: [docs/setup-guide.md](docs/setup-guide.md)
+
 ## Architecture
 
 ### Alarm Import
