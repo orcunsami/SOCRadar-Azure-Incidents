@@ -505,8 +505,9 @@ filter with **Filter set > Save**.
 
 Defender scores an incident partly from its MITRE tactics and techniques, so every rule,
 `Other alarms` included, carries both. Measured on 6 synthetic `Other alarms` alerts (6 Nov 2026,
-workspace connected to Defender): with tactics only, all 6 incidents scored 1; with tactics and
-techniques, 5 of 6 scored 2 to 4 (Threat Hunting stayed at 1), all in the Low band (below 15). The
+workspace connected to Defender): with tactics only, 5 of 6 incidents scored 1 and one scored 0; with
+tactics and techniques, 5 of 6 scored 2 to 4 (Threat Hunting stayed at 1), all in the Low band (below
+15). The
 score is Defender's own and not documented, so read these numbers as one measurement.
 
 A rule's own `techniques` do not reach the incident when the rule uses a tactics column, so
