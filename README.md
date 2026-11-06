@@ -234,6 +234,27 @@ to `true`, which restores v1.0.0's always-write behaviour with one difference, t
 guard, so a SOCRadar CRITICAL alarm is never lowered to High. Pass `SyncSeverity=false` on the
 upgrade if you had turned it off.
 
+### Check that the upgrade worked
+
+Nothing on the SOCRadar side reports back, so the evidence is in your portal:
+
+| What | Where | Expected |
+|---|---|---|
+| Deployment | Resource group > **Deployments** | `Succeeded`, about a minute |
+| Logic Apps | `SOCRadar-Alarm-Import` and `SOCRadar-Alarm-Sync` | **Enabled**; **Run history** shows a `Succeeded` run every `PollingIntervalMinutes` |
+| Rules | Microsoft Sentinel > **Analytics** | Five `SOCRadar - ...` rules, **Enabled** |
+| Data | **Logs** > `SOCRadar_Alarms_CL` | New rows after the first run |
+| Incident | Microsoft Sentinel or Microsoft Defender incident list | First rule-created incident 20 to 30 minutes after the deployment; in Defender, reset the Priority score filter first (see [Microsoft Defender portal](#microsoft-defender-portal)) |
+| Workbook | **SOCRadar Dashboard** | Alarm counts, incident numbers, sync status |
+
+A `401` in the Import run history means the key does not belong to this company; `402` means no
+credit, an inactive key or an invalid key (see [Check that it worked](#check-that-it-worked)).
+
+Status write-back keeps working in `AlertBacked`: in the measured upgrade, four incidents closed
+in Sentinel produced four `200` responses from SOCRadar and four `Synced` labels. Closing from the
+Defender portal goes the same way. A closed SOCRadar incident that still has no `Synced` label
+after 30 minutes raises the `SOCRadarUnsyncedClosedIncident` rule (see [Analytic Rules](#analytic-rules)).
+
 ## Rotating the API key
 
 No redeployment needed. The key is the `SocradarApiKey` parameter of the two Logic Apps
