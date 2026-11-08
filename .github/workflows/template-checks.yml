@@ -167,6 +167,8 @@ jobs:
           files = [f for f in out.split("\x00") if f]
           bad = []
           for name in files:
+              if name.lower().endswith((".jpg", ".jpeg", ".png")):
+                  continue  # screenshots are binary by nature
               try:
                   data = open(name, "rb").read()
               except IsADirectoryError:
