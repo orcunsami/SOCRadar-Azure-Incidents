@@ -330,7 +330,7 @@ is kept as it was.
   disabled; the Logic App reads and writes it with its own managed identity
 - **SOCRadar_Alarms_CL** custom table (optional)
 - **SOCRadarAuditLog_CL** audit table (optional)
-- **SOCRadar Dashboard** workbook (optional, needs the alarms table): alarms by severity, status and type, open and closed alarms (latest state per alarm), every alarm with its incident number, status and classification (alert-backed mode), and the sync status of SOCRadar incidents (closed incidents with and without the `Synced` label). The incident and sync panels read `SecurityAlert` and `SecurityIncident` and stay empty where those tables do not exist yet
+- **SOCRadar Dashboard** workbook (optional, needs the alarms table): alarms by severity, status and type, open and closed alarms (latest state per alarm), every alarm with its incident number, status and classification (alert-backed mode), and the sync status of SOCRadar incidents (closed incidents with and without the `Synced` label). The incident and sync panels read `SecurityAlert` and `SecurityIncident` and stay empty where those tables do not exist yet. The Workbooks page in the Defender portal shows data from the primary workspace only; if this workspace is secondary, query the tables with Advanced hunting instead.
 - **Five hunting queries** under **Microsoft Sentinel > Hunting** (see [Hunting Queries](#hunting-queries))
 - Data Collection Endpoint and Rules for custom tables
 - **Workspace** -- when `DeployNewWorkspace=true` (not the default) and no workspace of that name exists in the deployment RG, with the subscription default tier; an existing one is left untouched
