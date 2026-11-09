@@ -33,6 +33,8 @@ import os
 import re
 import sys
 
+from arm_literals import arm_literals
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.join(REPO, "azuredeploy.json")
 IMPORT = os.path.join(REPO, "Playbooks", "SOCRadar-Alarm-Import", "azuredeploy.json")
@@ -49,7 +51,7 @@ ALL_TEMPLATES = [ROOT, IMPORT, SYNC, ALARMS_INFRA, AUDIT_INFRA,
 
 def load(path):
     with open(path) as fh:
-        return json.load(fh)
+        return arm_literals(json.load(fh))
 
 
 def walk_actions(actions, prefix=""):

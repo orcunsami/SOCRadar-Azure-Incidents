@@ -27,8 +27,11 @@ Run:  python3 tests/test_import_integrity.py
 
 import json
 import os
+import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "tools"))
+from arm_literals import arm_literals
 ROOT = os.path.join(REPO, "azuredeploy.json")
 IMPORT = os.path.join(REPO, "Playbooks", "SOCRadar-Alarm-Import", "azuredeploy.json")
 SYNC = os.path.join(REPO, "Playbooks", "SOCRadar-Alarm-Sync", "azuredeploy.json")
@@ -36,7 +39,7 @@ SYNC = os.path.join(REPO, "Playbooks", "SOCRadar-Alarm-Sync", "azuredeploy.json"
 failures = []
 checks = 0
 
-ALARM = "substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)"
+ALARM = "substring(join(createArray('000000000000', outputs('Extract_Backfill_Alarm_Id')), ''), length(outputs('Extract_Backfill_Alarm_Id')), 12)"
 FILTER_WHERE = ("@and(equals(coalesce(item()?['properties']?['additionalData']?['bookmarksCount'], 0), 0), "
                 "contains(coalesce(item()?['properties']?['title'], ''), '#'))")
 READ_LENGTH = "@length(coalesce(body('Fetch_Backfill_Alarm')?['data'], json('[]')))"
@@ -61,7 +64,7 @@ def rel(path):
 
 
 def workflows(path):
-    doc = json.load(open(path, encoding="utf-8"))
+    doc = arm_literals(json.load(open(path, encoding="utf-8")))
     for r in doc.get("resources", []):
         if r.get("type") == "Microsoft.Logic/workflows":
             yield r["properties"]["definition"]

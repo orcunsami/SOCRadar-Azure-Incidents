@@ -41,7 +41,7 @@
     "resources": [
         {
             "type": "Microsoft.Insights/dataCollectionEndpoints",
-            "apiVersion": "2023-03-11",
+            "apiVersion": "2024-03-11",
             "name": "[variables('DceName')]",
             "location": "[parameters('WorkspaceLocation')]",
             "properties": {
@@ -53,7 +53,7 @@
         },
         {
             "type": "Microsoft.OperationalInsights/workspaces/tables",
-            "apiVersion": "2022-10-01",
+            "apiVersion": "2025-02-01",
             "name": "[concat(parameters('WorkspaceName'), '/', variables('AlarmsTableName'))]",
             "properties": {
                 "schema": {
@@ -137,7 +137,7 @@
         },
         {
             "type": "Microsoft.Insights/dataCollectionRules",
-            "apiVersion": "2023-03-11",
+            "apiVersion": "2024-03-11",
             "name": "[variables('AlarmsDcrName')]",
             "location": "[parameters('WorkspaceLocation')]",
             "dependsOn": [
@@ -239,7 +239,7 @@
         },
         "dceEndpoint": {
             "type": "string",
-            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('DceName')), '2023-03-11').logsIngestion.endpoint]"
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('DceName')), '2024-03-11').logsIngestion.endpoint]"
         },
         "alarmsTableName": {
             "type": "string",
@@ -255,7 +255,7 @@
         },
         "alarmsDcrImmutableId": {
             "type": "string",
-            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName')), '2023-03-11').immutableId]"
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('AlarmsDcrName')), '2024-03-11').immutableId]"
         },
         "alarmsStreamName": {
             "type": "string",

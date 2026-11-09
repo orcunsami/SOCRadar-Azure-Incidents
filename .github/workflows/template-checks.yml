@@ -65,6 +65,19 @@ jobs:
       - name: ARM and Logic App expressions parse
         run: python3 tools/check_expressions.py
 
+      - name: Literal ARM payloads remain inspectable by contract tests
+        run: python3 tests/test_arm_literals.py
+
+      - name: ARM URI construction preserves Logic App runtime expressions
+        run: python3 -m unittest discover -s tests -p test_arm_uri_runtime.py
+
+      - name: All published templates pass ARM-TTK without exclusions
+        run: |
+          set -e
+          git clone --quiet --filter=blob:none https://github.com/Azure/arm-ttk.git "$RUNNER_TEMP/arm-ttk"
+          git -C "$RUNNER_TEMP/arm-ttk" checkout --quiet --detach 0ec9a41a4503e970a0ec8efb0cd08415cc172175
+          pwsh -NoProfile -File tools/check_arm_ttk.ps1 -ModulePath "$RUNNER_TEMP/arm-ttk/arm-ttk/arm-ttk.psd1"
+
       - name: Standalone templates match the one-click template
         run: python3 tools/check_template_drift.py
 

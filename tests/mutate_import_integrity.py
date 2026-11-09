@@ -22,7 +22,7 @@ IMPORTERS = ["azuredeploy.json", os.path.join("Playbooks", "SOCRadar-Alarm-Impor
 IOC = os.path.join("Playbooks", "SOCRadar-IOC-Enrichment", "azuredeploy.json")
 TEST = os.path.join("tests", "test_import_integrity.py")
 BANNER = "problem(s) in"
-ALARM = "substring(concat('000000000000', outputs('Extract_Backfill_Alarm_Id')), length(outputs('Extract_Backfill_Alarm_Id')), 12)"
+ALARM = "substring(join(createArray('000000000000', outputs('Extract_Backfill_Alarm_Id')), ''), length(outputs('Extract_Backfill_Alarm_Id')), 12)"
 
 
 def find(node, name):

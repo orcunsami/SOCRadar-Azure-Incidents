@@ -415,6 +415,9 @@ def m_phishing_domain_not_ingested(t):
 
 def m_monitored_asset_dropped(t):
     r, _ = rule(t)
+    value = r["properties"]["customDetails"]
+    if isinstance(value, str):
+        r["properties"]["customDetails"] = json.loads(value[len("[json('"):-len("')]")].replace("''", "'"))
     r["properties"]["customDetails"].pop("MonitoredAsset", None)
 
 
